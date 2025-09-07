@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { transactionApi, userApi, stripeApi } from '@/lib/api';
+import { transactionApi, userApi, stripeApi } from '../lib/api';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import BalanceCard from './BalanceCard';
