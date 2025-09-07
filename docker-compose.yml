@@ -1,0 +1,57 @@
+version: '3.8'
+
+services:
+  postgres:
+    image: postgres:15
+    container_name: finanzas_db
+    environment:
+      POSTGRES_DB: finanzas_db
+      POSTGRES_USER: finanzas_user
+      POSTGRES_PASSWORD: finanzas_password
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks:
+      - finanzas_network
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: finanzas_backend
+    ports:
+      - "8000:8000"
+    environment:
+      DATABASE_URL: postgresql://finanzas_user:finanzas_password@postgres:5432/finanzas_db
+      TWILIO_ACCOUNT_SID: ${TWILIO_ACCOUNT_SID}
+      TWILIO_AUTH_TOKEN: ${TWILIO_AUTH_TOKEN}
+      TWILIO_WHATSAPP_NUMBER: ${TWILIO_WHATSAPP_NUMBER}
+      STRIPE_SECRET_KEY: ${STRIPE_SECRET_KEY}
+      STRIPE_PUBLISHABLE_KEY: ${STRIPE_PUBLISHABLE_KEY}
+      STRIPE_WEBHOOK_SECRET: ${STRIPE_WEBHOOK_SECRET}
+      JWT_SECRET_KEY: ${JWT_SECRET_KEY:-your-secret-key-here}
+    depends_on:
+      - postgres
+    volumes:
+      - ./backend:/app
+    networks:
+      - finanzas_network
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: finanzas_frontend
+    ports:
+      - "3000:80"
+    networks:
+      - finanzas_network
+
+volumes:
+  postgres_data:
+
+networks:
+  finanzas_network:
+    driver: bridge
