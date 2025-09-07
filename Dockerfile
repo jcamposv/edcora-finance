@@ -10,18 +10,11 @@ COPY frontend/package*.json ./
 # Install ALL dependencies (including devDependencies for build)
 RUN npm ci
 
-# Copy all config files
-COPY frontend/tsconfig*.json ./
-COPY frontend/vite.config.ts ./
-COPY frontend/tailwind.config.js ./
-COPY frontend/index.html ./
-
-# Copy source code
-COPY frontend/src ./src
-COPY frontend/public ./public
+# Copy entire frontend directory (excluding node_modules via .dockerignore)
+COPY frontend/ ./
 
 # Debug: List files to verify structure
-RUN ls -la && ls -la src/ && ls -la src/lib/
+RUN ls -la && ls -la src/ && ls -la src/lib/ && ls -la public/
 
 # Build the frontend
 RUN npm run build
