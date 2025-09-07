@@ -4,17 +4,30 @@ FROM node:20-alpine as frontend-builder
 
 WORKDIR /app/frontend
 
-# Copy package files
+# Copy package files first for better caching
 COPY frontend/package*.json ./
 
 # Install ALL dependencies (including devDependencies for build)
 RUN npm ci
 
-# Copy frontend source
-COPY frontend/ ./
+# Copy all config files
+COPY frontend/tsconfig*.json ./
+COPY frontend/vite.config.ts ./
+COPY frontend/tailwind.config.js ./
+COPY frontend/index.html ./
+
+# Copy source code
+COPY frontend/src ./src
+COPY frontend/public ./public
+
+# Debug: List files to verify structure
+RUN ls -la && ls -la src/ && ls -la src/lib/
 
 # Build the frontend
 RUN npm run build
+
+# Verify build output
+RUN ls -la dist/
 
 # Stage 2: Setup Python backend and serve everything
 FROM python:3.11-slim
