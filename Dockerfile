@@ -13,18 +13,8 @@ RUN npm ci
 # Copy entire frontend directory (excluding node_modules via .dockerignore)
 COPY frontend/ ./
 
-# Debug: Detailed directory structure
-RUN echo "=== Root directory ===" && ls -la
-RUN echo "=== src directory ===" && ls -la src/ || echo "src not found"
-RUN echo "=== src subdirectories ===" && find src -type d || echo "no src dirs"
-RUN echo "=== All src files ===" && find src -type f || echo "no src files"
-RUN echo "=== public directory ===" && ls -la public/ || echo "public not found"
-
 # Build the frontend
 RUN npm run build
-
-# Verify build output
-RUN ls -la dist/
 
 # Stage 2: Setup Python backend and serve everything
 FROM python:3.11-slim
