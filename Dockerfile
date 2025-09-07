@@ -3,9 +3,17 @@
 FROM node:20-alpine as frontend-builder
 
 WORKDIR /app/frontend
+
+# Copy package files
 COPY frontend/package*.json ./
-RUN npm ci --omit=dev
+
+# Install ALL dependencies (including devDependencies for build)
+RUN npm ci
+
+# Copy frontend source
 COPY frontend/ ./
+
+# Build the frontend
 RUN npm run build
 
 # Stage 2: Setup Python backend and serve everything
@@ -14,6 +22,7 @@ FROM python:3.11-slim
 # Set environment variables
 ENV PYTHONUNBUFFERED=1
 ENV PYTHONDONTWRITEBYTECODE=1
+ENV DEBIAN_FRONTEND=noninteractive
 
 # Install system dependencies
 RUN apt-get update && apt-get install -y \
@@ -32,7 +41,7 @@ COPY backend/ ./backend/
 # Copy built frontend from previous stage
 COPY --from=frontend-builder /app/frontend/dist ./frontend/dist
 
-# Expose port
+# Expose port (Railway sets this automatically)
 EXPOSE $PORT
 
 # Start command

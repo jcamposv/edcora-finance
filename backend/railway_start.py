@@ -18,26 +18,46 @@ port = int(os.environ.get("PORT", 8000))
 frontend_build_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), "frontend", "dist")
 
 if os.path.exists(frontend_build_path):
-    # Mount static assets
-    app.mount("/assets", StaticFiles(directory=os.path.join(frontend_build_path, "assets")), name="assets")
+    # Mount static assets (CSS, JS, images, etc.)
+    assets_path = os.path.join(frontend_build_path, "assets")
+    if os.path.exists(assets_path):
+        app.mount("/assets", StaticFiles(directory=assets_path), name="assets")
     
-    # Serve index.html for all frontend routes
-    @app.get("/{full_path:path}")
-    async def serve_frontend(full_path: str):
-        # If it's an API route, let FastAPI handle it
-        if full_path.startswith(("docs", "redoc", "openapi.json", "health", "users", "transactions", "whatsapp", "stripe", "reports")):
-            return None  # Let FastAPI handle these routes
-        
-        # For all other routes, serve the frontend
-        index_path = os.path.join(frontend_build_path, "index.html")
-        if os.path.exists(index_path):
-            return FileResponse(index_path)
-        else:
-            return {"message": "Frontend not found"}
+    # Mount favicon and other root-level static files
+    app.mount("/static", StaticFiles(directory=frontend_build_path), name="static")
     
     print(f"✅ Serving frontend from: {frontend_build_path}")
+    print(f"📁 Assets path: {assets_path}")
+    
+    # List contents to debug
+    try:
+        dist_contents = os.listdir(frontend_build_path)
+        print(f"📂 Dist contents: {dist_contents}")
+        if os.path.exists(assets_path):
+            assets_contents = os.listdir(assets_path)
+            print(f"🎨 Assets contents: {assets_contents}")
+    except Exception as e:
+        print(f"❌ Error listing contents: {e}")
+    
 else:
     print(f"⚠️  Frontend build not found at: {frontend_build_path}")
+
+# This should be the LAST route to catch all remaining paths
+@app.get("/{full_path:path}")
+async def catch_all(full_path: str):
+    """Serve the frontend for all non-API routes"""
+    # Skip API routes, docs, and static files
+    if (full_path.startswith(("docs", "redoc", "openapi.json", "health", "users", "transactions", "whatsapp", "stripe", "reports", "assets", "static")) 
+        or full_path.endswith((".js", ".css", ".png", ".jpg", ".ico", ".svg"))):
+        # This should not be reached due to mounted static files and API routes
+        return {"error": "Route not found"}
+    
+    # Serve index.html for all frontend routes (SPA routing)
+    index_path = os.path.join(frontend_build_path, "index.html")
+    if os.path.exists(index_path):
+        return FileResponse(index_path, media_type="text/html")
+    else:
+        return {"message": "Frontend not available", "path": full_path}
 
 if __name__ == "__main__":
     print(f"🚀 Starting server on port {port}")
