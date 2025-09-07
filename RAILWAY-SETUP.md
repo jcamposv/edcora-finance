@@ -43,8 +43,8 @@ RAILWAY_ENVIRONMENT=production
 
 ### 4. Configuración de Build
 Railway usará automáticamente:
-- `nixpacks.toml` para la configuración de build
-- `Procfile` para el comando de inicio
+- `Dockerfile` para la configuración de build (multi-stage)
+- `Procfile` para el comando de inicio (fallback)
 - `railway.json` para configuraciones adicionales
 
 ### 5. Dominios y URLs
