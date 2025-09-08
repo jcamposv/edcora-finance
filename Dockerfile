@@ -1,23 +1,29 @@
 # Multi-stage Dockerfile for Railway deployment
+
 # Stage 1: Build frontend
 FROM node:20-alpine as frontend-builder
 
-WORKDIR /app
+WORKDIR /app/frontend
 
 # Copy package files first for better caching
-COPY frontend/package*.json ./frontend/
+COPY frontend/package*.json ./
 
-# Change to frontend directory and install dependencies
-WORKDIR /app/frontend
-RUN npm install
+# Install ALL dependencies (including devDependencies for build)
+RUN npm ci --only=production=false
 
-# Copy entire frontend directory (excluding node_modules via .dockerignore)
-WORKDIR /app
-COPY frontend/ ./frontend/
-WORKDIR /app/frontend
+# Copy source code
+COPY frontend/ ./
+
+# Verify that required files exist
+RUN ls -la src/lib/ || echo "lib directory not found"
+RUN ls -la tsconfig.json || echo "tsconfig.json not found"
+RUN ls -la vite.config.ts || echo "vite.config.ts not found"
 
 # Build the frontend
 RUN npm run build
+
+# Verify build output
+RUN ls -la dist/ || echo "dist directory not found after build"
 
 # Stage 2: Setup Python backend and serve everything
 FROM python:3.11-slim
@@ -43,6 +49,9 @@ COPY backend/ ./backend/
 
 # Copy built frontend from previous stage
 COPY --from=frontend-builder /app/frontend/dist ./frontend/dist
+
+# Verify frontend was copied
+RUN ls -la frontend/dist/ || echo "Frontend dist not found"
 
 # Expose port (Railway sets this automatically)
 EXPOSE $PORT
