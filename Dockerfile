@@ -10,28 +10,8 @@ COPY frontend/package*.json ./
 # Install ALL dependencies (including devDependencies for build)
 RUN npm install
 
-# Copy frontend files explicitly (package.json already copied above)
-COPY frontend/tsconfig*.json ./
-COPY frontend/vite.config.ts ./
-COPY frontend/tailwind.config.js ./
-COPY frontend/postcss.config.js ./
-COPY frontend/index.html ./
-COPY frontend/src/ ./src/
-# Skip public directory for now to focus on main issue
-
-# Debug: List files to verify they were copied
-RUN echo "=== Debug: Listing files ===" && \
-    ls -la && \
-    echo "=== Debug: src structure ===" && \
-    find . -name "src" -type d && \
-    echo "=== Debug: All directories in src ===" && \
-    find src -type d 2>/dev/null || echo "src directory not found" && \
-    echo "=== Debug: All .ts/.tsx files ===" && \
-    find . -name "*.ts" -o -name "*.tsx" | head -20 && \
-    echo "=== Debug: Looking for api.ts specifically ===" && \
-    find . -name "api.ts" && \
-    echo "=== Debug: Working directory ===" && \
-    pwd
+# Copy entire frontend directory (excluding node_modules via .dockerignore)
+COPY frontend/ ./
 
 # Build the frontend
 RUN npm run build
