@@ -39,7 +39,7 @@ class WhatsAppService:
     
     def send_otp(self, to_number: str, otp_code: str) -> bool:
         """Send OTP code via WhatsApp."""
-        message = f"Tu código de verificación para Control Finanzas es: {otp_code}\n\nEste código expira en 5 minutos."
+        message = f"Tu código de verificación para Edcora Finanzas es: {otp_code}\n\nEste código expira en 5 minutos."
         return self.send_message(to_number, message)
     
     def send_transaction_confirmation(self, to_number: str, amount: float, transaction_type: str, category: str, currency: str = "₡") -> bool:

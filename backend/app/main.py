@@ -36,7 +36,7 @@ async def lifespan(app: FastAPI):
 
 # Create FastAPI app with lifespan events
 app = FastAPI(
-    title="Control Finanzas API",
+    title="Edcora Finanzas API",
     description="MVP de control de finanzas personales vía WhatsApp",
     version="1.0.0",
     lifespan=lifespan
@@ -61,12 +61,12 @@ app.include_router(reports.router)
 @app.get("/")
 async def root():
     """Root endpoint."""
-    return {"message": "Control Finanzas API - MVP", "version": "1.0.0"}
+    return {"message": "Edcora Finanzas API - MVP", "version": "1.0.0"}
 
 @app.get("/health")
 async def health_check():
     """Health check endpoint."""
-    return {"status": "healthy", "service": "Control Finanzas API"}
+    return {"status": "healthy", "service": "Edcora Finanzas API"}
 
 @app.get("/scheduler/status")
 async def scheduler_status():

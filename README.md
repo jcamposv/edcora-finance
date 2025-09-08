@@ -1,4 +1,4 @@
-# Control Finanzas - MVP
+# Edcora Finanzas - MVP
 
 MVP de control de finanzas personales vía WhatsApp construido con FastAPI, React, PostgreSQL, CrewAI, Twilio WhatsApp API y Stripe.
 

@@ -78,6 +78,17 @@ class TransactionService:
             "expenses": float(expense_sum),
             "balance": float(income_sum - expense_sum)
         }
+    
+    @staticmethod
+    def get_transactions_by_date_range(db: Session, user_id: str, start_date: date, end_date: date) -> List[Transaction]:
+        """Get all transactions for a user within a specific date range."""
+        return db.query(Transaction).filter(
+            and_(
+                Transaction.user_id == user_id,
+                Transaction.date >= start_date,
+                Transaction.date <= end_date
+            )
+        ).order_by(Transaction.date.desc()).all()
 
     @staticmethod
     def get_expenses_by_category(db: Session, user_id: str, start_date: Optional[date] = None, end_date: Optional[date] = None) -> List[dict]:

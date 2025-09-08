@@ -10,6 +10,7 @@ from app.services.whatsapp_service import WhatsAppService
 from app.services.otp_service import OTPService
 from app.agents.parser_agent import ParserAgent
 from app.agents.categorizer_agent import CategorizerAgent
+from app.agents.report_agent import ReportAgent
 from app.models.transaction import TransactionType
 from app.core.schemas import TransactionCreate
 
@@ -20,6 +21,7 @@ whatsapp_service = WhatsAppService()
 otp_service = OTPService()
 parser_agent = ParserAgent()
 categorizer_agent = CategorizerAgent()
+report_agent = ReportAgent()
 
 @router.post("/webhook")
 async def whatsapp_webhook(
@@ -60,7 +62,7 @@ async def whatsapp_webhook(
             # Welcome message for new users
             whatsapp_service.send_message(
                 From, 
-                f"¡Bienvenido a Control Finanzas! 🎉\n\nTu cuenta ha sido creada automáticamente. Ya puedes enviar tus gastos e ingresos.\n\nEjemplos:\n• Gasté ₡5000 en almuerzo\n• ₡10000 gasolina\n• Ingreso ₡50000 salario\n\n¡Comencemos! 💰"
+                f"¡Bienvenido a Edcora Finanzas! 🎉\n\nTu cuenta ha sido creada automáticamente. \n\n📝 **Para registrar:**\n• Gasté ₡5000 en almuerzo\n• ₡10000 gasolina\n• Ingreso ₡50000 salario\n\n📊 **Para reportes:**\n• Resumen de gastos\n• Cuánto he gastado hoy\n• Balance del mes\n\n¡Comencemos! 💰"
             )
             return {"status": "user_created"}
         
@@ -69,7 +71,42 @@ async def whatsapp_webhook(
             whatsapp_service.send_upgrade_prompt(From)
             return {"status": "limit_reached"}
         
-        # Parse the message using ParserAgent with phone context
+        # Check if this is a report request first
+        if report_agent.is_report_request(message_body):
+            try:
+                # Get user's currency symbol
+                currency_symbol = "₡"  # Default
+                if hasattr(user, 'currency'):
+                    currency_map = {
+                        "CRC": "₡", "USD": "$", "MXN": "$", "EUR": "€", 
+                        "COP": "$", "PEN": "S/", "GTQ": "Q"
+                    }
+                    currency_symbol = currency_map.get(user.currency, "$")
+                
+                # Generate report
+                report_result = report_agent.generate_report(
+                    message_body, str(user.id), db, currency_symbol
+                )
+                
+                if report_result["success"]:
+                    whatsapp_service.send_message(From, report_result["report"])
+                    return {"status": "report_sent", "report": report_result["report"]}
+                else:
+                    whatsapp_service.send_message(
+                        From, 
+                        "No pude generar el reporte solicitado. Intenta con: 'resumen de gastos' o 'cuánto he gastado este mes'"
+                    )
+                    return {"status": "report_error"}
+                    
+            except Exception as e:
+                print(f"Error generating report: {e}")
+                whatsapp_service.send_message(
+                    From,
+                    "Ocurrió un error generando tu reporte. Por favor intenta nuevamente."
+                )
+                return {"status": "report_error"}
+        
+        # If not a report request, parse as transaction
         parsed_data = parser_agent.parse_message(message_body, phone_number)
         
         if not parsed_data["success"] or not parsed_data["amount"]:
