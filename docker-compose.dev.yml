@@ -17,7 +17,7 @@ services:
 
   backend:
     build:
-      context: ./backend
+      context: .
       dockerfile: Dockerfile
     container_name: finanzas_backend_dev
     ports:
@@ -40,31 +40,6 @@ services:
       - finanzas_network_dev
     command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
 
-  frontend:
-    build:
-      context: ./frontend
-      dockerfile: Dockerfile.dev
-    container_name: finanzas_frontend_dev
-    ports:
-      - "5173:5173"
-    environment:
-      - VITE_API_URL=http://localhost:8000
-      - CHOKIDAR_USEPOLLING=true
-    volumes:
-      - ./frontend/src:/app/src
-      - ./frontend/public:/app/public
-      - ./frontend/index.html:/app/index.html
-      - ./frontend/vite.config.ts:/app/vite.config.ts
-      - ./frontend/tailwind.config.js:/app/tailwind.config.js
-      - ./frontend/tsconfig.json:/app/tsconfig.json
-      - ./frontend/tsconfig.app.json:/app/tsconfig.app.json
-      - ./frontend/.env:/app/.env
-      # Exclude node_modules from volume mounting
-      - /app/node_modules
-    networks:
-      - finanzas_network_dev
-    depends_on:
-      - backend
 
 volumes:
   postgres_data_dev:

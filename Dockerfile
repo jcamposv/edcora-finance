@@ -1,14 +1,4 @@
-# Multi-stage Dockerfile for Railway deployment
-# Stage 1: Build frontend
-# FROM node:20-alpine as frontend-builder
-
-# WORKDIR /app/frontend
-# COPY frontend/package*.json ./
-#RUN npm ci
-#COPY frontend/ ./
-# RUN npm run build
-
-# Stage 2: Setup Python backend and serve everything
+# Backend-only Dockerfile for Railway deployment
 FROM python:3.11-slim
 
 # Set environment variables
@@ -28,9 +18,6 @@ RUN pip install --no-cache-dir -r backend/requirements.txt
 
 # Copy backend code
 COPY backend/ ./backend/
-
-# Copy built frontend from previous stage
-# COPY --from=frontend-builder /app/frontend/dist ./frontend/dist
 
 # Expose port
 EXPOSE $PORT

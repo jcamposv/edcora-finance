@@ -17,7 +17,7 @@ services:
 
   backend:
     build:
-      context: ./backend
+      context: .
       dockerfile: Dockerfile
     container_name: finanzas_backend
     ports:
@@ -39,15 +39,6 @@ services:
       - finanzas_network
     command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
 
-  frontend:
-    build:
-      context: ./frontend
-      dockerfile: Dockerfile
-    container_name: finanzas_frontend
-    ports:
-      - "3000:80"
-    networks:
-      - finanzas_network
 
 volumes:
   postgres_data:
