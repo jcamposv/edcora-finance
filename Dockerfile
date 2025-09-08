@@ -17,7 +17,7 @@ COPY frontend/tailwind.config.js ./
 COPY frontend/postcss.config.js ./
 COPY frontend/index.html ./
 COPY frontend/src/ ./src/
-COPY frontend/public/ ./public/ 2>/dev/null || true
+COPY frontend/public/ ./public/
 
 # Debug: List files to verify they were copied
 RUN echo "=== Debug: Listing files ===" && \
