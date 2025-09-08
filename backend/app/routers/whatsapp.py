@@ -38,22 +38,39 @@ async def whatsapp_webhook(
         phone_number = From.replace("whatsapp:", "")
         message_body = Body.strip()
         
-        # Find or suggest user registration
+        # Find or create user automatically
         user = UserService.get_user_by_phone(db, phone_number)
         if not user:
+            # Detect default currency for user based on phone number
+            from app.agents.currency_agent import CurrencyAgent
+            currency_agent = CurrencyAgent()
+            currency_info = currency_agent.detect_currency("registro", phone_number)
+            default_currency = currency_info.get("currency_code", "USD")
+            
+            # Auto-register new user with detected currency
+            from app.core.schemas import UserCreate
+            new_user_data = UserCreate(
+                phone_number=phone_number,
+                name="Usuario WhatsApp",  # Default name, user can change later
+                currency=default_currency,
+                plan_type="free"
+            )
+            user = UserService.create_user(db, new_user_data)
+            
+            # Welcome message for new users
             whatsapp_service.send_message(
                 From, 
-                "¡Hola! Para usar Control Finanzas, primero debes registrarte en nuestro sitio web. Visita nuestro dashboard y regístrate con este número de teléfono."
+                f"¡Bienvenido a Control Finanzas! 🎉\n\nTu cuenta ha sido creada automáticamente. Ya puedes enviar tus gastos e ingresos.\n\nEjemplos:\n• Gasté ₡5000 en almuerzo\n• ₡10000 gasolina\n• Ingreso ₡50000 salario\n\n¡Comencemos! 💰"
             )
-            return {"status": "user_not_found"}
+            return {"status": "user_created"}
         
         # Check if user can add more transactions
         if not UserService.can_add_transaction(db, str(user.id)):
             whatsapp_service.send_upgrade_prompt(From)
             return {"status": "limit_reached"}
         
-        # Parse the message using ParserAgent
-        parsed_data = parser_agent.parse_message(message_body)
+        # Parse the message using ParserAgent with phone context
+        parsed_data = parser_agent.parse_message(message_body, phone_number)
         
         if not parsed_data["success"] or not parsed_data["amount"]:
             whatsapp_service.send_message(
@@ -80,13 +97,14 @@ async def whatsapp_webhook(
         
         transaction = TransactionService.create_transaction(db, transaction_data)
         
-        # Send confirmation
+        # Send confirmation with detected currency
+        currency_symbol = parsed_data.get("currency_symbol", "₡")
         whatsapp_service.send_transaction_confirmation(
             From,
             float(parsed_data["amount"]),
             transaction_type,
             category,
-            user.currency if user.currency != "CRC" else "₡"
+            currency_symbol
         )
         
         return {"status": "success", "transaction_id": str(transaction.id)}

@@ -3,6 +3,7 @@ import re
 from decimal import Decimal
 from typing import Optional, Dict, Any
 from app.core.llm_config import get_openai_config
+from app.agents.currency_agent import CurrencyAgent
 
 class ParserAgent:
     def __init__(self):
@@ -14,21 +15,26 @@ class ParserAgent:
                 self.agent = Agent(
                     role="Expense Parser",
                     goal="Extract financial information from WhatsApp messages",
-                    backstory="You are an expert at parsing Spanish text messages to extract financial transaction information. You understand Costa Rican currency (colones) and common expense descriptions.",
+                    backstory="You are an expert at parsing Spanish text messages to extract financial transaction information. You understand multiple currencies and common expense descriptions across Latin America.",
                     verbose=True,
                     allow_delegation=False
                 )
             else:
                 self.agent = None
+                
+            # Initialize currency detection agent
+            self.currency_agent = CurrencyAgent()
+            
         except Exception as e:
             print(f"Warning: Failed to initialize ParserAgent: {e}")
             self.has_openai = False
             self.agent = None
+            self.currency_agent = None
     
-    def parse_message(self, message: str) -> Dict[str, Any]:
+    def parse_message(self, message: str, phone_number: str = None) -> Dict[str, Any]:
         """
         Parse a WhatsApp message to extract transaction information.
-        Returns dict with amount, description, and transaction type.
+        Returns dict with amount, description, transaction type, and currency info.
         """
         
         task = Task(
@@ -57,17 +63,43 @@ class ParserAgent:
         )
         
         try:
-            # Only use CrewAI if OpenAI is configured
+            # Parse the message for amount and type
             if self.has_openai:
                 result = crew.kickoff()
-                return self._parse_crew_result(str(result), message)
+                parsed_data = self._parse_crew_result(str(result), message)
             else:
                 # Use regex fallback if no OpenAI configured
-                return self._regex_fallback_parse(message)
+                parsed_data = self._regex_fallback_parse(message)
+            
+            # Detect currency using the intelligent agent
+            if parsed_data["success"] and phone_number and self.currency_agent:
+                currency_info = self.currency_agent.detect_currency(message, phone_number)
+                parsed_data.update({
+                    "currency_code": currency_info.get("currency_code", "USD"),
+                    "currency_symbol": currency_info.get("currency_symbol", "$"),
+                    "currency_confidence": currency_info.get("confidence", "medium")
+                })
+            
+            return parsed_data
+            
         except Exception as e:
             print(f"CrewAI parsing failed: {e}")
             # Fallback to regex parsing if CrewAI fails
-            return self._regex_fallback_parse(message)
+            parsed_data = self._regex_fallback_parse(message)
+            
+            # Still try currency detection on fallback
+            if parsed_data["success"] and phone_number and self.currency_agent:
+                try:
+                    currency_info = self.currency_agent.detect_currency(message, phone_number)
+                    parsed_data.update({
+                        "currency_code": currency_info.get("currency_code", "USD"),
+                        "currency_symbol": currency_info.get("currency_symbol", "$"),
+                        "currency_confidence": currency_info.get("confidence", "medium")
+                    })
+                except Exception:
+                    pass  # Continue without currency detection
+            
+            return parsed_data
     
     def _parse_crew_result(self, result: str, original_message: str) -> Dict[str, Any]:
         """Parse the CrewAI result to extract structured information."""
