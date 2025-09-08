@@ -106,10 +106,20 @@ class ReportAgent:
         period = self._extract_time_period(message)
         start_date, end_date = self._get_date_range(period)
         
+        # Debug: Print date range
+        print(f"DEBUG: Searching transactions for user {user_id}")
+        print(f"DEBUG: Date range: {start_date} to {end_date}")
+        print(f"DEBUG: Period: {period}")
+        
         # Get transactions
         transactions = TransactionService.get_transactions_by_date_range(
             db, user_id, start_date, end_date
         )
+        
+        # Debug: Print results
+        print(f"DEBUG: Found {len(transactions)} transactions")
+        for t in transactions[:3]:  # Show first 3
+            print(f"DEBUG: Transaction date: {t.date}, amount: {t.amount}")
         
         # Calculate totals
         total_expenses = sum(float(t.amount) for t in transactions if t.type == TransactionType.expense)
@@ -165,6 +175,11 @@ class ReportAgent:
         """Get start and end dates for the specified period."""
         now = datetime.now()
         today = now.date()
+        
+        # Debug: Print current date info
+        print(f"DEBUG: Current datetime: {now}")
+        print(f"DEBUG: Current date: {today}")
+        print(f"DEBUG: Current year: {today.year}, month: {today.month}")
         
         if period == "today":
             return today, today

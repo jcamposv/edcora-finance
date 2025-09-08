@@ -82,13 +82,24 @@ class TransactionService:
     @staticmethod
     def get_transactions_by_date_range(db: Session, user_id: str, start_date: date, end_date: date) -> List[Transaction]:
         """Get all transactions for a user within a specific date range."""
-        return db.query(Transaction).filter(
+        # Convert dates to datetime for proper comparison with timezone-aware DateTime column
+        from datetime import datetime, time
+        
+        start_datetime = datetime.combine(start_date, time.min)  # 00:00:00
+        end_datetime = datetime.combine(end_date, time.max)      # 23:59:59.999999
+        
+        print(f"DEBUG: Searching with datetime range: {start_datetime} to {end_datetime}")
+        
+        transactions = db.query(Transaction).filter(
             and_(
                 Transaction.user_id == user_id,
-                Transaction.date >= start_date,
-                Transaction.date <= end_date
+                Transaction.date >= start_datetime,
+                Transaction.date <= end_datetime
             )
         ).order_by(Transaction.date.desc()).all()
+        
+        print(f"DEBUG: Query returned {len(transactions)} transactions")
+        return transactions
 
     @staticmethod
     def get_expenses_by_category(db: Session, user_id: str, start_date: Optional[date] = None, end_date: Optional[date] = None) -> List[dict]:
