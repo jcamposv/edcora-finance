@@ -13,6 +13,16 @@ RUN npm install
 # Copy entire frontend directory (excluding node_modules via .dockerignore)
 COPY frontend/ ./
 
+# Debug: List files to verify they were copied
+RUN echo "=== Debug: Listing files ===" && \
+    ls -la && \
+    echo "=== Debug: src structure ===" && \
+    find src -name "*.ts" -o -name "*.tsx" | head -20 && \
+    echo "=== Debug: lib directory ===" && \
+    ls -la src/lib/ && \
+    echo "=== Debug: components using api ===" && \
+    grep -r "from.*api" src/components/ || true
+
 # Build the frontend
 RUN npm run build
 
