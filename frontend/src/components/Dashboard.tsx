@@ -12,15 +12,15 @@ interface DashboardProps {
 }
 
 const Dashboard: React.FC<DashboardProps> = ({ phoneNumber, onLogout }) => {
-  const [user, setUser] = useState<any>(null);
+  const [user, setUser] = useState(null);
   const [balance, setBalance] = useState<{ total: number; income: number; expenses: number }>({ 
     total: 0, 
     income: 0, 
     expenses: 0 
   });
-  const [transactions, setTransactions] = useState<any[]>([]);
-  const [expensesByCategory, setExpensesByCategory] = useState<any[]>([]);
-  const [subscriptionStatus, setSubscriptionStatus] = useState<any>(null);
+  const [transactions, setTransactions] = useState([]);
+  const [expensesByCategory, setExpensesByCategory] = useState([]);
+  const [subscriptionStatus, setSubscriptionStatus] = useState(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
