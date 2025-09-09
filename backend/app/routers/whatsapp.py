@@ -11,6 +11,7 @@ from app.services.otp_service import OTPService
 from app.agents.parser_agent import ParserAgent
 from app.agents.categorizer_agent import CategorizerAgent
 from app.agents.report_agent import ReportAgent
+from app.agents.family_agent import FamilyAgent
 from app.models.transaction import TransactionType
 from app.core.schemas import TransactionCreate
 
@@ -22,6 +23,7 @@ otp_service = OTPService()
 parser_agent = ParserAgent()
 categorizer_agent = CategorizerAgent()
 report_agent = ReportAgent()
+family_agent = FamilyAgent()
 
 @router.post("/webhook")
 async def whatsapp_webhook(
@@ -62,7 +64,7 @@ async def whatsapp_webhook(
             # Welcome message for new users
             whatsapp_service.send_message(
                 From, 
-                f"¡Bienvenido a Edcora Finanzas! 🎉\n\nTu cuenta ha sido creada automáticamente. \n\n📝 **Para registrar:**\n• Gasté ₡5000 en almuerzo\n• ₡10000 gasolina\n• Ingreso ₡50000 salario\n\n📊 **Para reportes:**\n• Resumen de gastos\n• Cuánto he gastado hoy\n• Balance del mes\n\n¡Comencemos! 💰"
+                f"¡Bienvenido a Edcora Finanzas! 🎉\n\nTu cuenta ha sido creada automáticamente. \n\n📝 **Para registrar:**\n• Gasté ₡5000 en almuerzo\n• ₡10000 gasolina\n• Ingreso ₡50000 salario\n\n📊 **Para reportes:**\n• Resumen de gastos\n• Cuánto he gastado hoy\n• Balance del mes\n\n👨‍👩‍👧‍👦 **Para familias:**\n• Crear familia: Mi Hogar\n• Invitar +50612345678\n• Miembros\n\n¡Comencemos! 💰"
             )
             return {"status": "user_created"}
         
@@ -71,7 +73,25 @@ async def whatsapp_webhook(
             whatsapp_service.send_upgrade_prompt(From)
             return {"status": "limit_reached"}
         
-        # Check if this is a report request first
+        # Check if this is a family command first
+        if family_agent.is_family_command(message_body):
+            try:
+                family_result = family_agent.process_family_command(
+                    message_body, str(user.id), db
+                )
+                
+                whatsapp_service.send_message(From, family_result["message"])
+                return {"status": "family_command", "success": family_result["success"]}
+                
+            except Exception as e:
+                print(f"Error processing family command: {e}")
+                whatsapp_service.send_message(
+                    From,
+                    "Ocurrió un error procesando tu comando familiar. Por favor intenta nuevamente."
+                )
+                return {"status": "family_error"}
+        
+        # Check if this is a report request
         if report_agent.is_report_request(message_body):
             try:
                 # Get user's currency symbol
@@ -106,7 +126,16 @@ async def whatsapp_webhook(
                 )
                 return {"status": "report_error"}
         
-        # If not a report request, parse as transaction
+        # If not a report request, check permissions and parse as transaction
+        # Check if user has permission to create transactions (family role check)
+        if not TransactionService.can_user_create_transaction(db, str(user.id)):
+            whatsapp_service.send_message(
+                From,
+                "❌ No tienes permisos para registrar transacciones.\n\nSi perteneces a una familia, solo los miembros y administradores pueden agregar gastos. Los observadores solo pueden ver reportes."
+            )
+            return {"status": "permission_denied"}
+        
+        # Parse as transaction
         parsed_data = parser_agent.parse_message(message_body, phone_number)
         
         if not parsed_data["success"] or not parsed_data["amount"]:

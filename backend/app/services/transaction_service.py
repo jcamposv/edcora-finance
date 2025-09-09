@@ -118,3 +118,25 @@ class TransactionService:
         result = query.group_by(Transaction.category).all()
         
         return [{"category": cat, "amount": float(total)} for cat, total in result]
+    
+    @staticmethod
+    def can_user_create_transaction(db: Session, user_id: str) -> bool:
+        """Check if user has permission to create transactions (individual or family)."""
+        # For individual transactions, users can always create their own
+        # For family contexts, check if user has member+ role
+        from app.services.family_service import FamilyService
+        from app.models.family import FamilyRole
+        
+        user_families = FamilyService.get_user_families(db, user_id)
+        
+        # If user has no families, they can create individual transactions
+        if not user_families:
+            return True
+        
+        # If user is a member in at least one family, they can create transactions
+        for family in user_families:
+            role = FamilyService.get_member_role(db, str(family.id), user_id)
+            if role in [FamilyRole.admin, FamilyRole.member]:
+                return True
+        
+        return False  # Only viewers cannot create transactions
