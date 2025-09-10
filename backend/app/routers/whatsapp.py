@@ -14,6 +14,7 @@ from app.agents.report_agent import ReportAgent
 from app.agents.organization_agent import OrganizationAgent
 from app.agents.context_agent import ContextAgent
 from app.agents.help_agent import HelpAgent
+from app.agents.master_router_agent import MasterRouterAgent
 from app.services.conversation_state import conversation_state
 from app.models.transaction import TransactionType
 from app.core.schemas import TransactionCreate
@@ -29,6 +30,7 @@ report_agent = ReportAgent()
 organization_agent = OrganizationAgent()
 context_agent = ContextAgent()
 help_agent = HelpAgent()
+master_router = MasterRouterAgent()
 
 @router.post("/webhook")
 async def whatsapp_webhook(
@@ -83,88 +85,22 @@ async def whatsapp_webhook(
         if pending_transaction:
             return handle_context_response(From, message_body, user, pending_transaction, db)
         
-        # Check if this is an organization command
-        if organization_agent.is_organization_command(message_body):
-            try:
-                organization_result = organization_agent.process_organization_command(
-                    message_body, str(user.id), db
-                )
+        # Use Master Router for intelligent processing
+        try:
+            result = master_router.route_and_process(message_body, str(user.id), db)
+            
+            if result.get("success", False):
+                whatsapp_service.send_message(From, result["message"])
+                return {"status": "master_router_success", "action": result.get("action", "unknown")}
+            else:
+                # If master router couldn't handle it, send the error message
+                whatsapp_service.send_message(From, result.get("message", "No pude procesar tu mensaje."))
+                return {"status": "master_router_handled", "action": result.get("action", "unknown")}
                 
-                whatsapp_service.send_message(From, organization_result["message"])
-                return {"status": "organization_command", "success": organization_result["success"]}
-                
-            except Exception as e:
-                print(f"Error processing organization command: {e}")
-                whatsapp_service.send_message(
-                    From,
-                    "Ocurrió un error procesando tu comando de organización. Por favor intenta nuevamente."
-                )
-                return {"status": "organization_error"}
-        
-        # Check if this is a help request
-        if help_agent.is_help_request(message_body):
-            try:
-                help_result = help_agent.answer_question(message_body, str(user.id), db)
-                whatsapp_service.send_message(From, help_result["message"])
-                return {"status": "help_provided", "success": help_result["success"]}
-                
-            except Exception as e:
-                print(f"Error processing help request: {e}")
-                # Fallback to contextual help
-                contextual_help = help_agent.get_contextual_help(str(user.id), db)
-                whatsapp_service.send_message(From, contextual_help["message"])
-                return {"status": "help_fallback"}
-        
-        # Check if this is a report request
-        if report_agent.is_report_request(message_body):
-            try:
-                # Get user's currency symbol
-                currency_symbol = "₡"  # Default
-                if hasattr(user, 'currency'):
-                    currency_map = {
-                        "CRC": "₡", "USD": "$", "MXN": "$", "EUR": "€", 
-                        "COP": "$", "PEN": "S/", "GTQ": "Q"
-                    }
-                    currency_symbol = currency_map.get(user.currency, "$")
-                
-                # Generate report
-                report_result = report_agent.generate_report(
-                    message_body, str(user.id), db, currency_symbol
-                )
-                
-                if report_result["success"]:
-                    whatsapp_service.send_message(From, report_result["report"])
-                    return {"status": "report_sent", "report": report_result["report"]}
-                else:
-                    whatsapp_service.send_message(
-                        From, 
-                        "No pude generar el reporte solicitado. Intenta con: 'resumen de gastos' o 'cuánto he gastado este mes'"
-                    )
-                    return {"status": "report_error"}
-                    
-            except Exception as e:
-                print(f"Error generating report: {e}")
-                whatsapp_service.send_message(
-                    From,
-                    "Ocurrió un error generando tu reporte. Por favor intenta nuevamente."
-                )
-                return {"status": "report_error"}
-        
-        # Before trying to parse as transaction, check if it looks like a command that wasn't understood
-        suspicious_commands = [
-            "crear", "create", "nueva", "nuevo", "invitar", "invite", "help", "ayuda",
-            "como", "cómo", "how", "miembros", "members", "salir", "leave", "comandos",
-            "agregar", "agrego", "colega", "compañero", "rol", "role"
-        ]
-        
-        if any(word in message_body.lower() for word in suspicious_commands):
-            # This looks like a command but wasn't recognized, provide help
-            contextual_help = help_agent.get_contextual_help(str(user.id), db)
-            whatsapp_service.send_message(From, contextual_help["message"])
-            return {"status": "unrecognized_command_help"}
-        
-        # Parse as transaction
-        return handle_new_transaction(From, message_body, user, phone_number, db)
+        except Exception as e:
+            print(f"Error in master router: {e}")
+            # Fallback to old transaction parsing
+            return handle_new_transaction(From, message_body, user, phone_number, db)
         
     except Exception as e:
         print(f"Error processing WhatsApp message: {e}")

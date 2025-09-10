@@ -43,14 +43,30 @@ class OrganizationAgent:
             
         # Fallback keywords for regex detection
         self.organization_keywords = [
-            "familia", "family", "familiares", "compartir gastos",
-            "empresa", "company", "negocio", "corporación",
-            "equipo", "team", "grupo", "departamento",
-            "invitar", "invite", "agregar", "roommate", "compañero",
-            "miembros", "members", "quienes", "quien esta",
-            "salir", "leave", "abandonar", "irse", "irme",
-            "en que", "que familia", "cual", "a que", "pertenezco", "estoy en"
+            "familia", "family", "familiares", "compartir gastos", "crear familia", "nueva familia",
+            "empresa", "company", "negocio", "corporación", "crear empresa", "nueva empresa",
+            "equipo", "team", "grupo", "departamento", "crear equipo", "nuevo equipo",
+            "invitar", "invite", "agregar", "roommate", "compañero", "esposa", "esposo",
+            "hermana", "hermano", "colega", "empleado", "socio", "mi esposa", "mi hermano",
+            "miembros", "members", "quienes", "quien esta", "mostrar miembros",
+            "salir", "leave", "abandonar", "irse", "irme", "dejar",
+            "en que", "que familia", "cual", "a que", "pertenezco", "estoy en",
+            "aceptar", "acepto", "unirme", "quiero unirme"
         ]
+        
+        # Load system context
+        self.system_context = self._load_system_context()
+    
+    def _load_system_context(self) -> str:
+        """Load system guide for enhanced AI context."""
+        try:
+            import os
+            context_path = os.path.join(os.path.dirname(__file__), "../context/system_guide.md")
+            with open(context_path, 'r', encoding='utf-8') as f:
+                return f.read()
+        except Exception as e:
+            print(f"Warning: Could not load system context: {e}")
+            return ""
     
     def is_organization_command(self, message: str) -> bool:
         """Detect if a message is organization-related using AI or fallback keywords."""
@@ -66,17 +82,21 @@ class OrganizationAgent:
         try:
             task = Task(
                 description=f"""
-                Analiza este mensaje para determinar si está relacionado con manejo de organizaciones financieras:
-                "{message}"
+                Usa esta guía del sistema para determinar si el mensaje es sobre organizaciones:
                 
-                Considera que es sobre organizaciones si habla de:
-                - Crear grupos organizacionales para gastos (familia, empresa, equipo)
-                - Invitar miembros, empleados, familiares o colegas a compartir gastos
-                - Ver miembros de organización o preguntar quién está en la organización
-                - Preguntar en qué organización está o a cuál pertenece
-                - Salirse de grupos organizacionales
-                - Manejar permisos organizacionales
-                - Cualquier pregunta sobre organizaciones, grupos o membresías
+                {self.system_context[:1000]}  # Primeros 1000 chars para no sobrecargar
+                
+                Analiza este mensaje: "{message}"
+                
+                El mensaje ES sobre organizaciones si menciona:
+                - Crear organizaciones: "crear familia", "nueva empresa", "hacer equipo"
+                - Invitar personas: "invitar a mi esposa", "agregar colega", "invita a mi hermano"
+                - Gestión de miembros: "miembros", "quién está", "mostrar miembros"
+                - Aceptar invitaciones: "acepto", "quiero unirme"
+                - Salir de organizaciones: "salir familia", "abandonar empresa"
+                
+                IMPORTANTE: "crear familia" = SÍ es comando de organización
+                IMPORTANTE: "invitar a mi esposa" = SÍ es comando de organización
                 
                 Responde solo con "true" o "false".
                 """,
@@ -122,33 +142,52 @@ class OrganizationAgent:
             
             task = Task(
                 description=f"""
-                Analiza esta conversación sobre organizaciones financieras y determina la intención del usuario:
+                CONTEXTO DEL SISTEMA:
+                {self.system_context[:2000]}
                 
-                Mensaje: "{message}"
-                
+                CONTEXTO DEL USUARIO:
                 {context}
                 
-                Determina cuál de estas acciones quiere realizar:
-                1. create_organization - Crear una nueva organización (nombres como "familia García", "empresa Gymgo", "equipo ventas", etc.)
-                2. invite_member - Invitar a alguien (menciona números de teléfono o "invitar a mi hermana")
-                3. list_members - Ver quién está en la organización ("quiénes están", "miembros", "quién más")
-                4. accept_invitation - Aceptar una invitación ("acepto", "sí quiero unirme", "está bien")
-                5. leave_organization - Salirse de una organización ("me quiero salir", "ya no quiero estar")
-                6. help - Necesita ayuda o no está clara la intención
+                MENSAJE DEL USUARIO: "{message}"
                 
-                Para create_organization, extrae también el nombre de la organización del mensaje.
-                Para invite_member, extrae el número de teléfono si lo menciona.
+                Analiza el mensaje y determina la acción exacta que el usuario quiere realizar:
                 
-                Responde en formato JSON:
+                ACCIONES POSIBLES:
+                1. create_organization - Crear organización
+                   Ejemplos: "crear familia", "nueva empresa Gymgo", "hacer equipo"
+                   
+                2. invite_member - Invitar persona
+                   CON NÚMERO: "invitar +50612345678", "agregar +506... admin"
+                   SIN NÚMERO: "invitar a mi esposa", "agregar mi hermano", "invita mi colega"
+                   
+                3. list_members - Ver miembros
+                   Ejemplos: "miembros", "quién está", "mostrar miembros"
+                   
+                4. accept_invitation - Aceptar invitación
+                   Ejemplos: "acepto", "sí quiero unirme", "está bien"
+                   
+                5. leave_organization - Salir de organización
+                   Ejemplos: "salir familia", "abandonar empresa", "me quiero salir"
+                
+                EXTRAER INFORMACIÓN:
+                - Para create_organization: nombre de la organización
+                - Para invite_member: número de teléfono (si existe) y persona a invitar
+                
+                IMPORTANTE:
+                - "crear familia" SIN nombre → pedir nombre
+                - "invitar a mi esposa" SIN número → pedir número
+                
+                Responde en JSON:
                 {{
                     "action": "acción_detectada",
-                    "organization_name": "nombre_extraído_si_aplica",
-                    "phone_number": "número_extraído_si_aplica",
+                    "organization_name": "nombre_si_aplica_o_null",
+                    "phone_number": "número_si_existe_o_null",
+                    "person_to_invite": "descripción_persona_si_aplica",
                     "confidence": "alta/media/baja"
                 }}
                 """,
                 agent=self.agent,
-                expected_output="JSON con la acción detectada"
+                expected_output="JSON con la acción detectada y datos extraídos"
             )
             
             crew = Crew(agents=[self.agent], tasks=[task])
@@ -172,7 +211,7 @@ class OrganizationAgent:
         """Parse AI response when JSON parsing fails."""
         response_lower = response.lower()
         
-        if "create_organization" in response_lower:
+        if "create_organization" in response_lower or any(phrase in original_message.lower() for phrase in ["crear familia", "nueva familia", "crear empresa", "nueva empresa"]):
             organization_name = self._extract_organization_name_fallback(original_message)
             return {"action": "create_organization", "organization_name": organization_name, "confidence": "media"}
         elif "invite_member" in response_lower:
@@ -190,18 +229,24 @@ class OrganizationAgent:
     def _extract_organization_name_fallback(self, message: str) -> Optional[str]:
         """Extract organization name from message using simple patterns."""
         patterns = [
+            r"(?:crear|nueva?)\s+familia\s+(.+)",
+            r"(?:crear|nueva?)\s+empresa\s+(.+)",
+            r"(?:crear|nuevo)\s+equipo\s+(.+)",
+            r"(?:crear|nuevo)\s+grupo\s+(.+)",
             r"familia\s+(.+?)(?:\s|$)",
             r"empresa\s+(.+?)(?:\s|$)",
             r"equipo\s+(.+?)(?:\s|$)",
             r"grupo\s+(.+?)(?:\s|$)",
-            r"casa\s+(.+?)(?:\s|$)",
-            r"llamar(?:la|lo)?\s+(.+?)(?:\s|$)"
+            r"casa\s+(.+?)(?:\s|$)"
         ]
         
         for pattern in patterns:
             match = re.search(pattern, message.lower())
             if match:
-                return match.group(1).strip()
+                name = match.group(1).strip()
+                # Don't return empty names or very short names
+                if name and len(name) > 1:
+                    return name
         
         return None
     
@@ -224,10 +269,13 @@ class OrganizationAgent:
                 
         elif action == "invite_member":
             phone = intent.get("phone_number") or self._extract_phone_fallback(message)
+            person_to_invite = intent.get("person_to_invite", "")
+            
             if phone:
                 return self._handle_invite_member_natural(phone, user_id, db)
             else:
-                return self._ask_for_phone_number()
+                # Ask for phone number but include context of who they want to invite
+                return self._ask_for_phone_number_with_context(person_to_invite)
                 
         elif action == "list_members":
             return self._handle_list_members_natural(user_id, db)
@@ -495,6 +543,16 @@ class OrganizationAgent:
             "success": False,
             "message": "¡Perfecto! ¿A quién quieres invitar? 📱\n\nNecesito el número de teléfono. Dime algo como:\n• 'Invita a +50612345678'\n• 'Agrega a mi compañero al +50612345678'"
         }
+    
+    def _ask_for_phone_number_with_context(self, person_description: str) -> Dict[str, Any]:
+        """Ask user to provide phone number with context of who they want to invite."""
+        if person_description:
+            return {
+                "success": False,
+                "message": f"¡Perfecto! Quieres invitar a {person_description}. 😊\n\n¿Cuál es su número de teléfono?\n\nEjemplo: +50612345678"
+            }
+        else:
+            return self._ask_for_phone_number()
     
     def _handle_organization_help_natural(self) -> Dict[str, Any]:
         """Provide natural help about organization features."""
