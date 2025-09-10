@@ -11,10 +11,17 @@ def run_migrations():
     """Run Alembic migrations before starting the app"""
     try:
         print("🔄 Running database migrations...")
+        print(f"Current working directory: {os.getcwd()}")
+        
+        # Change to the directory containing alembic.ini
+        os.chdir("/app")  # Railway workdir
+        print(f"Changed to directory: {os.getcwd()}")
+        
         result = subprocess.run(["alembic", "upgrade", "head"], 
                               capture_output=True, text=True, check=True)
         print("✅ Migrations completed successfully")
-        print(result.stdout)
+        if result.stdout.strip():
+            print(f"STDOUT: {result.stdout}")
     except subprocess.CalledProcessError as e:
         print(f"❌ Migration failed: {e}")
         print(f"STDOUT: {e.stdout}")
