@@ -127,7 +127,7 @@ class MasterRouterAgent:
                    - "list_members": "miembros", "quién está"
                    - "leave_organization": "salir", "abandonar"
                    - "create_transaction": gastos/ingresos ("gasté", "ingreso", "4000 en")
-                   - "generate_report": "resumen", "cuánto", "balance"
+                   - "generate_report": "resumen", "cuánto", "balance", "reporte", "gastos del mes", "mis gastos", "total gastos"
                    - "privacy_request": "privacidad", "datos", "derechos", "seguridad", "eliminar cuenta"
                    - "help_request": "cómo", "ayuda", "no entiendo"
                 
@@ -162,6 +162,13 @@ class MasterRouterAgent:
                    
                    INVITACIONES SIN NÚMEROS:
                    - "invitar a mi esposa" = invite_member con person_to_invite "mi esposa"
+                   
+                   REPORTES Y RESÚMENES:
+                   - "resumen de gastos" = generate_report
+                   - "cuánto he gastado" = generate_report
+                   - "balance del mes" = generate_report
+                   - "mis gastos" = generate_report
+                   - "reporte" = generate_report
                 
                 RESPONDE EN JSON:
                 {{
@@ -217,6 +224,10 @@ class MasterRouterAgent:
         reasoning = analysis.get("reasoning", "")
         
         print(f"🧠 AI Analysis: {action_type} - {reasoning}")
+        
+        # Special debug for report requests
+        if "resumen" in original_message.lower() or "reporte" in original_message.lower() or "balance" in original_message.lower():
+            print(f"🔍 REPORT DEBUG: Message '{original_message}' detected as '{action_type}'")
         
         if action_type == "accept_invitation":
             return self._handle_accept_invitation(user_id, db)
@@ -385,6 +396,7 @@ class MasterRouterAgent:
     
     def _handle_report_request(self, message: str, user_id: str, db: Session) -> Dict[str, Any]:
         """Route to report agent."""
+        print(f"📊 Handling report request: {message}")
         from app.agents.report_agent import ReportAgent
         report_agent = ReportAgent()
         
@@ -393,7 +405,12 @@ class MasterRouterAgent:
         user = UserService.get_user(db, user_id)
         currency_symbol = "₡" if user and user.currency == "CRC" else "$"
         
-        return report_agent.generate_report(message, user_id, db, currency_symbol)
+        print(f"💰 User currency: {user.currency if user else 'None'}, symbol: {currency_symbol}")
+        
+        result = report_agent.generate_report(message, user_id, db, currency_symbol)
+        print(f"📈 Report result: {result.get('success', False)}")
+        
+        return result
     
     def _handle_privacy_request(self, message: str, user_id: str, db: Session) -> Dict[str, Any]:
         """Route to privacy agent."""
@@ -471,6 +488,10 @@ class MasterRouterAgent:
                     "organization_context": None,
                     "transaction_type": "expense"
                 }, user_id, db)
+        
+        # Report requests
+        elif any(word in message_lower for word in ["resumen", "reporte", "balance", "cuánto", "cuanto", "mis gastos", "total gastos", "gastos del mes", "como voy", "cómo voy"]):
+            return self._handle_report_request(message, user_id, db)
         
         # Privacy requests
         elif any(word in message_lower for word in ["privacidad", "datos", "derechos", "seguridad", "eliminar cuenta", "privacy", "rights"]):
