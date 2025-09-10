@@ -14,6 +14,7 @@ class Transaction(Base):
     
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     user_id = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=False)
+    organization_id = Column(UUID(as_uuid=True), ForeignKey("organizations.id"), nullable=True)  # NULL = personal, UUID = organization transaction
     amount = Column(Numeric(10, 2), nullable=False)
     type = Column(Enum(TransactionType), nullable=False)
     category = Column(String, nullable=False)
@@ -21,3 +22,4 @@ class Transaction(Base):
     date = Column(DateTime(timezone=True), server_default=func.now())
     
     user = relationship("User", back_populates="transactions")
+    organization = relationship("Organization", back_populates="transactions")
