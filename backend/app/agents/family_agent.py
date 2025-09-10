@@ -46,7 +46,10 @@ class FamilyAgent:
             "familia", "family", "familiares", "compartir gastos",
             "invitar", "invite", "agregar", "roommate", "compañero",
             "miembros", "members", "quienes", "quien esta",
-            "salir", "leave", "abandonar", "irse", "irme"
+            "salir", "leave", "abandonar", "irse", "irme",
+            "en que familia", "que familia", "cual familia", 
+            "a que familia", "pertenezco", "estoy en", "mi familia",
+            "mis familias", "familias tengo", "cuantas familias"
         ]
     
     def is_family_command(self, message: str) -> bool:
@@ -69,9 +72,11 @@ class FamilyAgent:
                 Considera que es sobre familias si habla de:
                 - Crear grupos familiares para gastos
                 - Invitar familiares, roommates o amigos a compartir gastos
-                - Ver miembros de familia
+                - Ver miembros de familia o preguntar quién está en la familia
+                - Preguntar en qué familia está o a cuál pertenece
                 - Salirse de grupos familiares
                 - Manejar permisos familiares
+                - Cualquier pregunta sobre familias, grupos o membresías
                 
                 Responde solo con "true" o "false".
                 """,
