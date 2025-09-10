@@ -15,26 +15,40 @@ class WhatsAppService:
     
     def send_message(self, to_number: str, message: str) -> bool:
         """Send a WhatsApp message to a phone number."""
+        print(f"🔄 Attempting to send WhatsApp message...")
+        print(f"📱 To: {to_number}")
+        print(f"📝 Message length: {len(message)} chars")
+        print(f"🔧 Twilio configured: {self.client is not None}")
+        print(f"📞 From number: {self.whatsapp_number}")
+        
         if not self.client:
-            print("Twilio client not configured")
+            print("❌ Twilio client not configured - missing TWILIO_ACCOUNT_SID or TWILIO_AUTH_TOKEN")
             return False
         
         try:
             # Ensure the number has whatsapp: prefix
+            original_number = to_number
             if not to_number.startswith("whatsapp:"):
                 to_number = f"whatsapp:{to_number}"
             
-            message = self.client.messages.create(
+            print(f"📞 Original number: {original_number}")
+            print(f"📞 Formatted number: {to_number}")
+            
+            message_obj = self.client.messages.create(
                 body=message,
                 from_=self.whatsapp_number,
                 to=to_number
             )
             
-            print(f"Message sent successfully: {message.sid}")
+            print(f"✅ Message sent successfully!")
+            print(f"📋 Message SID: {message_obj.sid}")
+            print(f"📊 Status: {message_obj.status}")
             return True
             
         except Exception as e:
-            print(f"Error sending WhatsApp message: {e}")
+            print(f"❌ Error sending WhatsApp message: {e}")
+            print(f"❌ Error type: {type(e).__name__}")
+            print(f"❌ Error details: {str(e)}")
             return False
     
     def send_otp(self, to_number: str, otp_code: str) -> bool:

@@ -451,6 +451,7 @@ class OrganizationAgent:
             )
             
             # Send WhatsApp invitation message to the invited person
+            print(f"📧 Preparing to send invitation to {phone}")
             from app.services.whatsapp_service import WhatsAppService
             whatsapp_service = WhatsAppService()
             
@@ -458,6 +459,9 @@ class OrganizationAgent:
             from app.services.user_service import UserService
             inviter = UserService.get_user(db, user_id)
             inviter_name = inviter.name if inviter else "Alguien"
+            
+            print(f"👤 Inviter: {inviter_name}")
+            print(f"🏢 Organization: {organization.name}")
             
             # Create concise invitation message
             invitation_message = f"""🎉 **Invitación a Edcora Finanzas**
@@ -473,8 +477,13 @@ class OrganizationAgent:
 
 ¿Aceptas la invitación? 😊"""
             
+            print(f"📝 Invitation message prepared, length: {len(invitation_message)}")
+            print(f"📞 Attempting to send to: {phone}")
+            
             # Send the invitation message
             invitation_sent = whatsapp_service.send_message(phone, invitation_message)
+            
+            print(f"📤 Invitation sent result: {invitation_sent}")
             
             if invitation_sent:
                 return {
