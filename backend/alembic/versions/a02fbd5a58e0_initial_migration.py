@@ -1,22 +1,47 @@
-"""Create complete database schema
+"""Initial migration
 
-Revision ID: 20250910_160000
+Revision ID: a02fbd5a58e0
 Revises: 
-Create Date: 2025-09-10 16:00:00.000000
+Create Date: 2025-09-10 15:39:03.538828
 
 """
+from typing import Sequence, Union
+
 from alembic import op
 import sqlalchemy as sa
 from sqlalchemy.dialects import postgresql
 
-# revision identifiers, used by Alembic.
-revision = '20250910_160000'
-down_revision = None
-branch_labels = None
-depends_on = None
+
+revision: str = 'a02fbd5a58e0'
+down_revision: Union[str, None] = None
+branch_labels: Union[str, Sequence[str], None] = None
+depends_on: Union[str, Sequence[str], None] = None
 
 
 def upgrade() -> None:
+    # Create ENUMs with protection
+    op.execute("""
+        DO $$ BEGIN
+            CREATE TYPE organization_type AS ENUM ('family', 'team', 'department', 'company');
+        EXCEPTION
+            WHEN duplicate_object THEN null;
+        END $$;
+    """)
+    op.execute("""
+        DO $$ BEGIN
+            CREATE TYPE organization_role AS ENUM ('owner', 'admin', 'manager', 'member', 'viewer', 'accountant');
+        EXCEPTION
+            WHEN duplicate_object THEN null;
+        END $$;
+    """)
+    op.execute("""
+        DO $$ BEGIN
+            CREATE TYPE transactiontype AS ENUM ('income', 'expense');
+        EXCEPTION
+            WHEN duplicate_object THEN null;
+        END $$;
+    """)
+    
     # Create users table
     op.create_table('users',
         sa.Column('id', postgresql.UUID(as_uuid=True), primary_key=True, default=sa.text('gen_random_uuid()')),
@@ -29,20 +54,11 @@ def upgrade() -> None:
     )
     op.create_index('ix_users_phone_number', 'users', ['phone_number'])
 
-    # Create organization types
-    op.execute("""
-        CREATE TYPE organization_type AS ENUM ('family', 'team', 'department', 'company')
-    """)
-    
-    op.execute("""
-        CREATE TYPE organization_role AS ENUM ('owner', 'admin', 'manager', 'member', 'viewer', 'accountant')
-    """)
-
     # Create organizations table
     op.create_table('organizations',
         sa.Column('id', postgresql.UUID(as_uuid=True), primary_key=True, default=sa.text('gen_random_uuid()')),
         sa.Column('name', sa.String(255), nullable=False),
-        sa.Column('type', postgresql.ENUM('family', 'team', 'department', 'company', name='organization_type'), nullable=False),
+        sa.Column('type', sa.String(), nullable=False),
         sa.Column('parent_id', postgresql.UUID(as_uuid=True), nullable=True),
         sa.Column('owner_id', postgresql.UUID(as_uuid=True), nullable=False),
         sa.Column('currency', sa.String(3), default='USD'),
@@ -52,8 +68,7 @@ def upgrade() -> None:
         sa.Column('updated_at', sa.DateTime(timezone=True), server_default=sa.func.now()),
         sa.Column('is_active', sa.Boolean, default=True),
         sa.ForeignKeyConstraint(['parent_id'], ['organizations.id']),
-        sa.ForeignKeyConstraint(['owner_id'], ['users.id']),
-        sa.CheckConstraint('id != parent_id', name='no_self_parent')
+        sa.ForeignKeyConstraint(['owner_id'], ['users.id'])
     )
 
     # Create organization_members table
@@ -61,7 +76,7 @@ def upgrade() -> None:
         sa.Column('id', postgresql.UUID(as_uuid=True), primary_key=True, default=sa.text('gen_random_uuid()')),
         sa.Column('organization_id', postgresql.UUID(as_uuid=True), nullable=False),
         sa.Column('user_id', postgresql.UUID(as_uuid=True), nullable=False),
-        sa.Column('role', postgresql.ENUM('owner', 'admin', 'manager', 'member', 'viewer', 'accountant', name='organization_role'), nullable=False, default='member'),
+        sa.Column('role', sa.String(), nullable=False, default='member'),
         sa.Column('department', sa.String(255), nullable=True),
         sa.Column('permissions', postgresql.JSONB, default={}),
         sa.Column('nickname', sa.String(100), nullable=True),
@@ -78,7 +93,7 @@ def upgrade() -> None:
         sa.Column('organization_id', postgresql.UUID(as_uuid=True), nullable=False),
         sa.Column('invited_phone', sa.String(20), nullable=False),
         sa.Column('invited_by', postgresql.UUID(as_uuid=True), nullable=False),
-        sa.Column('role', postgresql.ENUM('owner', 'admin', 'manager', 'member', 'viewer', 'accountant', name='organization_role'), default='member'),
+        sa.Column('role', sa.String(), default='member'),
         sa.Column('message', sa.Text, nullable=True),
         sa.Column('expires_at', sa.DateTime(timezone=True), server_default=sa.text("NOW() + INTERVAL '7 days'")),
         sa.Column('created_at', sa.DateTime(timezone=True), server_default=sa.func.now()),
@@ -90,16 +105,13 @@ def upgrade() -> None:
         sa.ForeignKeyConstraint(['accepted_by'], ['users.id'])
     )
 
-    # Create transaction type enum
-    op.execute("CREATE TYPE transactiontype AS ENUM ('income', 'expense')")
-
     # Create transactions table
     op.create_table('transactions',
         sa.Column('id', postgresql.UUID(as_uuid=True), primary_key=True, default=sa.text('gen_random_uuid()')),
         sa.Column('user_id', postgresql.UUID(as_uuid=True), nullable=False),
         sa.Column('organization_id', postgresql.UUID(as_uuid=True), nullable=True),
         sa.Column('amount', sa.Numeric(10, 2), nullable=False),
-        sa.Column('type', postgresql.ENUM('income', 'expense', name='transactiontype'), nullable=False),
+        sa.Column('type', sa.String(), nullable=False),
         sa.Column('category', sa.String(), nullable=False),
         sa.Column('description', sa.Text),
         sa.Column('date', sa.DateTime(timezone=True), server_default=sa.func.now()),
@@ -119,7 +131,7 @@ def upgrade() -> None:
         sa.ForeignKeyConstraint(['user_id'], ['users.id'])
     )
 
-    # Create indexes for performance
+    # Create indexes
     op.create_index('idx_organizations_parent_id', 'organizations', ['parent_id'])
     op.create_index('idx_organizations_owner_id', 'organizations', ['owner_id'])
     op.create_index('idx_org_members_user_id', 'organization_members', ['user_id'])
@@ -131,7 +143,7 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
-    # Drop tables in reverse order
+    # Drop tables
     op.drop_table('reports')
     op.drop_table('transactions')
     op.drop_table('organization_invitations')
@@ -139,7 +151,7 @@ def downgrade() -> None:
     op.drop_table('organizations')
     op.drop_table('users')
     
-    # Drop enums
+    # Drop ENUMs
     op.execute('DROP TYPE IF EXISTS transactiontype')
     op.execute('DROP TYPE IF EXISTS organization_role')
     op.execute('DROP TYPE IF EXISTS organization_type')

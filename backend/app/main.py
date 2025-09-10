@@ -17,9 +17,9 @@ async def lifespan(app: FastAPI):
     # Startup
     print("Starting up the application...")
     
-    # Create database tables
-    Base.metadata.create_all(bind=engine)
-    print("Database tables created/verified")
+    # Tables are created by Alembic migrations, not FastAPI
+    # Base.metadata.create_all(bind=engine) 
+    print("Database tables managed by Alembic")
     
     # Start scheduler
     scheduler_service = SchedulerService()
