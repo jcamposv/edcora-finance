@@ -11,7 +11,7 @@ from app.services.otp_service import OTPService
 from app.agents.parser_agent import ParserAgent
 from app.agents.categorizer_agent import CategorizerAgent
 from app.agents.report_agent import ReportAgent
-from app.agents.family_agent import FamilyAgent
+from app.agents.organization_agent import OrganizationAgent
 from app.agents.context_agent import ContextAgent
 from app.services.conversation_state import conversation_state
 from app.models.transaction import TransactionType
@@ -25,7 +25,7 @@ otp_service = OTPService()
 parser_agent = ParserAgent()
 categorizer_agent = CategorizerAgent()
 report_agent = ReportAgent()
-organization_agent = FamilyAgent()  # Still using FamilyAgent but it now works with Organizations
+organization_agent = OrganizationAgent()
 context_agent = ContextAgent()
 
 @router.post("/webhook")
@@ -82,9 +82,9 @@ async def whatsapp_webhook(
             return handle_context_response(From, message_body, user, pending_transaction, db)
         
         # Check if this is an organization command
-        if organization_agent.is_family_command(message_body):
+        if organization_agent.is_organization_command(message_body):
             try:
-                organization_result = organization_agent.process_family_command(
+                organization_result = organization_agent.process_organization_command(
                     message_body, str(user.id), db
                 )
                 

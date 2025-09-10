@@ -326,26 +326,32 @@ class FamilyAgent:
             "salir organización", "leave organization", "abandonar organización"
         ])
     
-    def _handle_create_family(self, message: str, user_id: str, db: Session) -> Dict[str, Any]:
-        """Handle family creation command."""
-        # Extract family name from message
+    def _handle_create_organization(self, message: str, user_id: str, db: Session) -> Dict[str, Any]:
+        """Handle organization creation command."""
+        # Extract organization name and type from message
         patterns = [
-            r"crear familia[:\s]+(.+)",
-            r"nueva familia[:\s]+(.+)",
-            r"family create[:\s]+(.+)"
+            (r"crear familia[:\s]+(.+)", OrganizationType.family),
+            (r"nueva familia[:\s]+(.+)", OrganizationType.family),
+            (r"crear empresa[:\s]+(.+)", OrganizationType.company),
+            (r"nueva empresa[:\s]+(.+)", OrganizationType.company),
+            (r"family create[:\s]+(.+)", OrganizationType.family),
+            (r"company create[:\s]+(.+)", OrganizationType.company)
         ]
         
-        family_name = None
-        for pattern in patterns:
+        organization_name = None
+        org_type = OrganizationType.family  # default
+        
+        for pattern, detected_type in patterns:
             match = re.search(pattern, message, re.IGNORECASE)
             if match:
-                family_name = match.group(1).strip()
+                organization_name = match.group(1).strip()
+                org_type = detected_type
                 break
         
-        if not family_name:
+        if not organization_name:
             return {
                 "success": False,
-                "message": "Por favor especifica el nombre de la familia.\n\nEjemplo:\n• Crear familia: Los García\n• Nueva familia: Mi Hogar"
+                "message": "Por favor especifica el nombre de la organización.\n\nEjemplo:\n• Crear familia: Los García\n• Crear empresa: Mi Empresa\n• Nueva familia: Mi Hogar"
             }
         
         # Get user's currency
@@ -356,17 +362,25 @@ class FamilyAgent:
                 "message": "Error: Usuario no encontrado."
             }
         
-        # Create family
-        family = FamilyService.create_family(
+        # Create organization
+        organization = OrganizationService.create_organization(
             db=db,
-            name=family_name,
+            name=organization_name,
             created_by=user_id,
+            organization_type=org_type,
             currency=user.currency
         )
         
+        org_type_names = {
+            OrganizationType.family: "familia",
+            OrganizationType.company: "empresa",
+            OrganizationType.team: "equipo",
+            OrganizationType.department: "departamento"
+        }
+        
         return {
             "success": True,
-            "message": f"✅ ¡Familia '{family_name}' creada exitosamente!\n\n👑 Eres el administrador\n💰 Moneda: {user.currency}\n\n📨 Para invitar miembros:\n• Invitar +50612345678\n• Invitar +50612345678 admin"
+            "message": f"✅ ¡{org_type_names[org_type].capitalize()} '{organization_name}' creada exitosamente!\n\n👑 Eres el propietario\n💰 Moneda: {user.currency}\n\n📨 Para invitar miembros:\n• Invitar +50612345678\n• Invitar +50612345678 admin"
         }
     
     def _handle_invite_member(self, message: str, user_id: str, db: Session) -> Dict[str, Any]:
@@ -450,8 +464,8 @@ class FamilyAgent:
             }
     
     def _handle_list_members(self, user_id: str, db: Session) -> Dict[str, Any]:
-        """Handle list family members command."""
-        user_families = FamilyService.get_user_families(db, user_id)
+        """Handle list organization members command."""
+        user_organizations = OrganizationService.get_user_organizations(db, user_id)
         
         if not user_families:
             return {
@@ -562,8 +576,8 @@ class FamilyAgent:
             }
     
     # Natural language handlers - more conversational responses
-    def _handle_create_family_natural(self, family_name: str, user_id: str, db: Session) -> Dict[str, Any]:
-        """Handle family creation with natural conversation."""
+    def _handle_create_organization_natural(self, organization_name: str, user_id: str, db: Session) -> Dict[str, Any]:
+        """Handle organization creation with natural conversation."""
         user = UserService.get_user(db, user_id)
         if not user:
             return {
@@ -571,23 +585,38 @@ class FamilyAgent:
                 "message": "¡Ups! Parece que hubo un problema. ¿Podrías intentar de nuevo?"
             }
         
+        # Detect organization type from name
+        org_type = OrganizationType.family  # default
+        if any(word in organization_name.lower() for word in ["empresa", "company", "corp", "inc"]):
+            org_type = OrganizationType.company
+        elif any(word in organization_name.lower() for word in ["equipo", "team"]):
+            org_type = OrganizationType.team
+        
         try:
-            family = FamilyService.create_family(
+            organization = OrganizationService.create_organization(
                 db=db,
-                name=family_name,
+                name=organization_name,
                 created_by=user_id,
+                organization_type=org_type,
                 currency=user.currency
             )
             
+            org_type_names = {
+                OrganizationType.family: "familia",
+                OrganizationType.company: "empresa",
+                OrganizationType.team: "equipo",
+                OrganizationType.department: "departamento"
+            }
+            
             return {
                 "success": True,
-                "message": f"🎉 ¡Perfecto! He creado la familia '{family_name}' para ti.\n\n👑 Eres el administrador, así que puedes invitar a quien quieras.\n💰 Vamos a usar {user.currency} como moneda.\n\n¿Quieres invitar a alguien ahora? Solo dime algo como 'invita a mi hermana al +506...' o 'agrega a mi roommate +506...'"
+                "message": f"🎉 ¡Perfecto! He creado la {org_type_names[org_type]} '{organization_name}' para ti.\n\n👑 Eres el propietario, así que puedes invitar a quien quieras.\n💰 Vamos a usar {user.currency} como moneda.\n\n¿Quieres invitar a alguien ahora? Solo dime algo como 'invita a mi compañero al +506...' o 'agrega a mi colega +506...'"
             }
             
         except Exception as e:
             return {
                 "success": False,
-                "message": f"¡Ay! Algo salió mal creando la familia. ¿Podrías intentar de nuevo? 😅"
+                "message": f"¡Ay! Algo salió mal creando la organización. ¿Podrías intentar de nuevo? 😅"
             }
     
     def _handle_invite_member_natural(self, phone: str, user_id: str, db: Session) -> Dict[str, Any]:
@@ -764,11 +793,11 @@ class FamilyAgent:
                 "message": f"Hubo un problema: {str(e)} 😅"
             }
     
-    def _ask_for_family_name(self) -> Dict[str, Any]:
-        """Ask user to provide family name."""
+    def _ask_for_organization_name(self) -> Dict[str, Any]:
+        """Ask user to provide organization name."""
         return {
             "success": False,
-            "message": "¡Me gusta la idea! 😊 ¿Cómo quieres llamar a tu familia?\n\nPuedes decir algo como:\n• 'Familia García'\n• 'Casa de roommates'\n• 'Gastos de pareja'\n• 'Mi hogar'"
+            "message": "¡Me gusta la idea! 😊 ¿Cómo quieres llamar a tu organización?\n\nPuedes decir algo como:\n• 'Familia García'\n• 'Empresa Gymgo'\n• 'Casa de roommates'\n• 'Mi hogar'"
         }
     
     def _ask_for_phone_number(self) -> Dict[str, Any]:

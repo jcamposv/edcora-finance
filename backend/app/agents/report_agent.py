@@ -4,7 +4,7 @@ from typing import Dict, Any, List, Optional
 from sqlalchemy.orm import Session
 from app.core.llm_config import get_openai_config
 from app.services.transaction_service import TransactionService
-from app.services.family_service import FamilyService
+from app.services.organization_service import OrganizationService
 from app.models.transaction import TransactionType
 import calendar
 
@@ -298,25 +298,25 @@ class ReportAgent:
         }
     
     def _get_family_transactions(self, db: Session, user_id: str, start_date, end_date) -> List:
-        """Get transactions for all family members the user belongs to."""
+        """Get transactions for all organization members the user belongs to."""
         from datetime import datetime, time
         
-        # Get user's families
-        user_families = FamilyService.get_user_families(db, user_id)
+        # Get user's organizations
+        user_organizations = OrganizationService.get_user_organizations(db, user_id)
         
-        if not user_families:
-            # No families, return individual transactions
+        if not user_organizations:
+            # No organizations, return individual transactions
             return TransactionService.get_transactions_by_date_range(
                 db, user_id, start_date, end_date
             )
         
         all_transactions = []
         
-        for family in user_families:
-            # Get all family members
-            family_members = FamilyService.get_family_members(db, str(family.id))
+        for organization in user_organizations:
+            # Get all organization members
+            organization_members = OrganizationService.get_organization_members(db, str(organization.id))
             
-            for member in family_members:
+            for member in organization_members:
                 # Get transactions for each member
                 member_transactions = TransactionService.get_transactions_by_date_range(
                     db, str(member.user_id), start_date, end_date

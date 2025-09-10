@@ -15,26 +15,8 @@ def run_migrations():
         # Change to backend directory where alembic.ini is located
         os.chdir("/app/backend")
         
-        # Clean alembic version table to start fresh (Railway DB is clean)
-        print("🧹 Cleaning Alembic version table...")
-        try:
-            subprocess.run([
-                "python", "-c", 
-                """
-import os
-from sqlalchemy import create_engine, text
-engine = create_engine(os.environ['DATABASE_URL'])
-with engine.connect() as conn:
-    conn.execute(text('DROP TABLE IF EXISTS alembic_version'))
-    conn.commit()
-print('Alembic version table cleaned')
-                """
-            ], capture_output=True, text=True, check=True)
-        except subprocess.CalledProcessError:
-            print("ℹ️  Alembic version table doesn't exist (expected for clean DB)")
-        
-        # Run migrations using simple alembic command
-        print("🔄 Applying migrations...")
+        # Run migrations using Alembic (it will handle what needs to be applied)
+        print("🔄 Running Alembic migrations...")
         result = subprocess.run(
             ["alembic", "upgrade", "head"], 
             capture_output=True, text=True, check=True
