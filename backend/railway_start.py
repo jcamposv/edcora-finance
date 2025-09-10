@@ -31,10 +31,20 @@ def run_migrations():
         os.chdir("/app/backend")
         print(f"Changed to backend directory: {os.getcwd()}")
         
-        # Run alembic with explicit config file
-        result = subprocess.run([
-            "alembic", "-c", "alembic.ini", "upgrade", "head"
-        ], capture_output=True, text=True, check=True)
+        # Set environment variable for alembic to use DATABASE_URL
+        env = os.environ.copy()
+        database_url = os.environ.get('DATABASE_URL')
+        if database_url:
+            print(f"✅ Using DATABASE_URL for migration")
+            # Override the alembic.ini database URL with environment variable
+            result = subprocess.run([
+                "alembic", "-c", "alembic.ini", 
+                "-x", f"sqlalchemy.url={database_url}",
+                "upgrade", "head"
+            ], capture_output=True, text=True, check=True, env=env)
+        else:
+            print("❌ No DATABASE_URL found in environment")
+            return
         
         print("✅ Migrations completed successfully")
         if result.stdout.strip():
