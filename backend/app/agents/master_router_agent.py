@@ -122,8 +122,8 @@ class MasterRouterAgent:
                 
                 1. TIPO DE ACCIÓN:
                    - "accept_invitation": "acepto", "sí quiero unirme" (NO ES TRANSACCIÓN)
-                   - "create_organization": "crear familia", "nueva empresa"
-                   - "invite_member": "invitar", "agregar persona"
+                   - "create_organization": "crear familia", "nueva empresa", "agregar familia", "agregar empresa"
+                   - "invite_member": "invitar", "agregar persona" (con nombre de persona)
                    - "list_members": "miembros", "quién está"
                    - "leave_organization": "salir", "abandonar"
                    - "create_transaction": gastos/ingresos ("gasté", "ingreso", "4000 en")
@@ -146,6 +146,9 @@ class MasterRouterAgent:
                    - "acepto" = DEFINITIVAMENTE accept_invitation
                    - "agregar 4000 a Gymgo" = transacción de 4000 en contexto Gymgo
                    - "gaste 4000 en Gymgo" = transacción de 4000 en contexto Gymgo
+                   - "agregar familia Campos Carranza" = create_organization con nombre "Campos Carranza"
+                   - "crear empresa MiEmpresa" = create_organization con nombre "MiEmpresa"
+                   - "invitar a mi esposa" = invite_member con persona "mi esposa"
                 
                 RESPONDE EN JSON:
                 {{
@@ -170,12 +173,24 @@ class MasterRouterAgent:
             crew = Crew(agents=[self.agent], tasks=[task])
             result = str(crew.kickoff()).strip()
             
+            print(f"🤖 AI Raw Response: {result}")
+            
             # Parse AI response
             try:
-                analysis = json.loads(result)
+                # Try to extract JSON from response if it has extra text
+                import re
+                json_match = re.search(r'\{.*\}', result, re.DOTALL)
+                if json_match:
+                    json_str = json_match.group(0)
+                    analysis = json.loads(json_str)
+                else:
+                    analysis = json.loads(result)
+                
+                print(f"🧠 AI Parsed Analysis: {analysis}")
                 return self._execute_analyzed_action(analysis, message, user_id, db)
-            except json.JSONDecodeError:
-                print(f"Failed to parse AI response: {result}")
+            except json.JSONDecodeError as e:
+                print(f"❌ Failed to parse AI response: {result}")
+                print(f"❌ JSON Error: {e}")
                 return self._fallback_route_and_process(message, user_id, db)
                 
         except Exception as e:
@@ -288,17 +303,38 @@ class MasterRouterAgent:
         }
     
     def _handle_organization_action(self, action: str, parameters: Dict, user_id: str, db: Session) -> Dict[str, Any]:
-        """Route to organization agent."""
+        """Handle organization actions directly."""
         from app.agents.organization_agent import OrganizationAgent
         org_agent = OrganizationAgent()
         
-        # This would need to be implemented based on the specific action
-        # For now, return a placeholder
-        return {
-            "success": False,
-            "message": "Funcionalidad de organización en desarrollo",
-            "action": f"organization_{action}"
-        }
+        if action == "create":
+            organization_name = parameters.get("organization_name")
+            if organization_name:
+                return org_agent._handle_create_organization_natural(organization_name, user_id, db)
+            else:
+                return org_agent._ask_for_organization_name()
+        
+        elif action == "invite":
+            phone_number = parameters.get("phone_number")
+            person_to_invite = parameters.get("person_to_invite", "")
+            
+            if phone_number:
+                return org_agent._handle_invite_member_natural(phone_number, user_id, db)
+            else:
+                return org_agent._ask_for_phone_number_with_context(person_to_invite)
+        
+        elif action == "list":
+            return org_agent._handle_list_members_natural(user_id, db)
+        
+        elif action == "leave":
+            return org_agent._handle_leave_organization_natural(user_id, db)
+        
+        else:
+            return {
+                "success": False,
+                "message": f"Acción de organización '{action}' no reconocida",
+                "action": f"organization_{action}"
+            }
     
     def _handle_report_request(self, message: str, user_id: str, db: Session) -> Dict[str, Any]:
         """Route to report agent."""
@@ -326,9 +362,13 @@ class MasterRouterAgent:
         if any(word in message_lower for word in ["acepto", "aceptar", "quiero unirme"]):
             return self._handle_accept_invitation(user_id, db)
         
-        # Create organization
-        elif any(phrase in message_lower for phrase in ["crear familia", "crear empresa", "nueva familia", "nueva empresa"]):
-            return self._handle_organization_action("create", {"organization_name": None}, user_id, db)
+        # Create organization - Let the org agent handle name extraction intelligently
+        elif any(phrase in message_lower for phrase in ["crear familia", "crear empresa", "nueva familia", "nueva empresa", "agregar familia", "agregar empresa"]):
+            # Pass the full message to let OrganizationAgent extract the name intelligently
+            from app.agents.organization_agent import OrganizationAgent
+            org_agent = OrganizationAgent()
+            # Use the organization agent's own intelligence to parse the message
+            return org_agent.process_organization_command(message, user_id, db)
         
         # Transaction patterns
         elif any(phrase in message_lower for phrase in ["gasté", "gaste", "pagué", "pague", "compré", "compre"]) or any(char.isdigit() for char in message):
