@@ -62,7 +62,9 @@ class HelpAgent:
             "no sé", "no se", "don't know", "confused", "perdido", "lost",
             "tutorial", "guía", "guide", "explicar", "explain", "agregar", "add",
             "agrego", "invito", "invite", "rol", "role", "colega", "colleague",
-            "compañero", "partner", "miembro", "member"
+            "compañero", "partner", "miembro", "member", "privacidad", "privacy",
+            "datos", "data", "seguridad", "security", "derechos", "rights",
+            "eliminar cuenta", "delete account", "gdpr", "protección datos"
         ]
     
     def is_help_request(self, message: str) -> bool:

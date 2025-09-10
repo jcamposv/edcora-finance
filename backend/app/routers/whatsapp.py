@@ -68,11 +68,54 @@ async def whatsapp_webhook(
             )
             user = UserService.create_user(db, new_user_data)
             
-            # Welcome message for new users
-            whatsapp_service.send_message(
-                From, 
-                f"¡Bienvenido a Edcora Finanzas! 🎉\n\nTu cuenta ha sido creada automáticamente. \n\n📝 **Para registrar:**\n• Gasté ₡5000 en almuerzo\n• ₡10000 gasolina\n• Ingreso ₡50000 salario\n\n📊 **Para reportes:**\n• Resumen de gastos\n• Cuánto he gastado hoy\n• Balance del mes\n\n👨‍👩‍👧‍👦 **Para familias:**\n• Crear familia: Mi Hogar\n• Invitar +50612345678\n• Miembros\n\n¡Comencemos! 💰"
-            )
+            # Enhanced welcome message for new users
+            welcome_message = f"""🎉 **¡Bienvenido a Edcora Finanzas!**
+
+🔐 **Tu Privacidad es Nuestra Prioridad:**
+• Tus datos financieros están encriptados y seguros
+• Solo TÚ tienes acceso a tu información personal
+• Nunca compartimos datos con terceros
+• Puedes eliminar tu cuenta en cualquier momento
+
+💰 **Tu Moneda:** {default_currency}
+🆓 **Plan:** Gratuito (transacciones ilimitadas)
+
+📱 **¿Qué puedes hacer?**
+
+💳 **Registrar gastos/ingresos:**
+• "Gasté ₡5000 en almuerzo"
+• "Ingreso ₡50000 salario"
+• "Pagué $25 Netflix"
+
+👨‍👩‍👧‍👦 **Organizaciones (familia/empresa):**
+• "Crear familia Mi Hogar"
+• "Crear empresa Gymgo"
+• "Invitar +50612345678"
+
+📊 **Reportes inteligentes:**
+• "Resumen de gastos"
+• "Cuánto gasté esta semana"
+• "Balance familiar"
+
+❓ **Ayuda:**
+• Escribe "ayuda" o "¿cómo funciona?"
+
+🛡️ **Tus Derechos:**
+• Acceso a todos tus datos
+• Rectificación de información
+• Eliminación de cuenta
+• Portabilidad de datos
+
+🔐 **Privacidad Garantizada:**
+• Escribe 'privacidad' para info completa
+• Escribe 'derechos' para tus derechos
+• Escribe 'eliminar cuenta' si quieres irte
+
+¡Comienza registrando tu primer gasto! 🚀
+
+💡 **Tip:** Escribe 'ayuda' en cualquier momento"""
+            
+            whatsapp_service.send_message(From, welcome_message)
             return {"status": "user_created"}
         
         # Check if user can add more transactions
@@ -90,8 +133,15 @@ async def whatsapp_webhook(
             result = master_router.route_and_process(message_body, str(user.id), db)
             
             if result.get("success", False):
+                # Send main message
                 whatsapp_service.send_message(From, result["message"])
-                return {"status": "master_router_success", "action": result.get("action", "unknown")}
+                
+                # Send additional messages if they exist (for long responses)
+                additional_messages = result.get("additional_messages", [])
+                for additional_msg in additional_messages:
+                    whatsapp_service.send_message(From, additional_msg)
+                
+                return {"status": "master_router_success", "action": result.get("action", "unknown"), "messages_sent": 1 + len(additional_messages)}
             else:
                 # If master router couldn't handle it, send the error message
                 whatsapp_service.send_message(From, result.get("message", "No pude procesar tu mensaje."))

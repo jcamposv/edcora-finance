@@ -128,6 +128,7 @@ class MasterRouterAgent:
                    - "leave_organization": "salir", "abandonar"
                    - "create_transaction": gastos/ingresos ("gasté", "ingreso", "4000 en")
                    - "generate_report": "resumen", "cuánto", "balance"
+                   - "privacy_request": "privacidad", "datos", "derechos", "seguridad", "eliminar cuenta"
                    - "help_request": "cómo", "ayuda", "no entiendo"
                 
                 2. PARÁMETROS ESPECÍFICOS:
@@ -225,6 +226,9 @@ class MasterRouterAgent:
         
         elif action_type == "generate_report":
             return self._handle_report_request(original_message, user_id, db)
+        
+        elif action_type == "privacy_request":
+            return self._handle_privacy_request(original_message, user_id, db)
         
         elif action_type == "help_request":
             return self._handle_help_request(original_message, user_id, db)
@@ -348,6 +352,12 @@ class MasterRouterAgent:
         
         return report_agent.generate_report(message, user_id, db, currency_symbol)
     
+    def _handle_privacy_request(self, message: str, user_id: str, db: Session) -> Dict[str, Any]:
+        """Route to privacy agent."""
+        from app.agents.privacy_agent import PrivacyAgent
+        privacy_agent = PrivacyAgent()
+        return privacy_agent.handle_privacy_inquiry(message, user_id, db)
+    
     def _handle_help_request(self, message: str, user_id: str, db: Session) -> Dict[str, Any]:
         """Route to help agent."""
         from app.agents.help_agent import HelpAgent
@@ -383,6 +393,10 @@ class MasterRouterAgent:
                     "organization_context": None,
                     "transaction_type": "expense"
                 }, user_id, db)
+        
+        # Privacy requests
+        elif any(word in message_lower for word in ["privacidad", "datos", "derechos", "seguridad", "eliminar cuenta", "privacy", "rights"]):
+            return self._handle_privacy_request(message, user_id, db)
         
         # Help requests
         elif any(word in message_lower for word in ["ayuda", "help", "cómo", "como", "comandos"]):
