@@ -19,6 +19,23 @@ if config.config_file_name is not None:
 
 target_metadata = Base.metadata
 
+def get_url():
+    """Get database URL from Railway environment variables or local config"""
+    # Railway provides DATABASE_URL directly
+    if os.getenv("DATABASE_URL") is not None:
+        return os.getenv("DATABASE_URL")
+    
+    # Fallback to individual PostgreSQL environment variables
+    user = os.getenv("PGUSER", "finanzas_user")
+    password = os.getenv("PGPASSWORD", "finanzas_password") 
+    host = os.getenv("PGHOST", "localhost")
+    port = os.getenv("PGPORT", "5432")
+    db = os.getenv("PGDATABASE", "finanzas_db")
+    return f"postgresql://{user}:{password}@{host}:{port}/{db}"
+
+# Set the database URL in the config
+config.set_main_option("sqlalchemy.url", get_url())
+
 def run_migrations_offline() -> None:
     url = config.get_main_option("sqlalchemy.url")
     context.configure(

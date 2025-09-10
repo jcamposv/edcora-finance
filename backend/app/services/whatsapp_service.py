@@ -80,3 +80,69 @@ class WhatsAppService:
 Visita tu dashboard para actualizar."""
         
         return self.send_message(to_number, message)
+    
+    def send_family_invitation_notification(self, to_number: str, family_name: str, inviter_name: str = None) -> bool:
+        """Send natural family invitation notification."""
+        inviter_text = f" (invitado por {inviter_name})" if inviter_name else ""
+        
+        message = f"""🎉 ¡Te invitaron a una familia en Edcora Finanzas!
+
+👨‍👩‍👧‍👦 Familia: {family_name}{inviter_text}
+
+Con una familia puedes compartir gastos y ver reportes juntos. ¡Perfecto para roommates, parejas o familias!
+
+¿Te unes? Solo responde algo como:
+• "Acepto"
+• "Sí quiero unirme"
+• "¡Perfecto!"
+
+O si prefieres no unirte, simplemente ignora este mensaje. 😊"""
+
+        return self.send_message(to_number, message)
+    
+    def send_family_welcome_message(self, to_number: str, family_name: str, role: str) -> bool:
+        """Send welcome message after joining family."""
+        role_descriptions = {
+            "admin": "administrador (puedes invitar y gestionar miembros)",
+            "member": "miembro (puedes agregar gastos familiares)", 
+            "viewer": "observador (puedes ver reportes pero no agregar gastos)"
+        }
+        
+        role_desc = role_descriptions.get(role, "miembro")
+        
+        message = f"""🎉 ¡Bienvenido a la familia '{family_name}'!
+
+👤 Tu rol: {role_desc}
+
+✨ **¿Qué sigue?**
+• Registra gastos normalmente: "gasté ₡5000 en almuerzo"
+• Los otros miembros verán tus gastos en reportes familiares
+• Pregúntame "¿quiénes están en mi familia?" para ver los miembros
+
+¡Ya están listos para llevar cuentas en familia! 📊"""
+
+        return self.send_message(to_number, message)
+    
+    def send_conversational_help(self, to_number: str) -> bool:
+        """Send conversational help about what the bot can do."""
+        message = """👋 ¡Hola! Soy tu asistente financiero. Te ayudo de forma súper natural.
+
+💰 **Para gastos:**
+• "Gasté 5000 colones en almuerzo"
+• "Pagué ₡15000 de gasolina"
+• "Recibí ₡50000 de salario"
+
+👨‍👩‍👧‍👦 **Para familias:**
+• "Quiero crear un grupo familiar"
+• "Invita a mi roommate al +506..."
+• "¿Quiénes están en mi familia?"
+• "Acepto la invitación"
+
+📊 **Para reportes:**
+• "¿Cómo van mis gastos?"
+• "Muéstrame mi balance"
+• "Reporte del mes"
+
+¡Háblame como le hablarías a un amigo! 😊"""
+
+        return self.send_message(to_number, message)

@@ -118,3 +118,26 @@ class TransactionService:
         result = query.group_by(Transaction.category).all()
         
         return [{"category": cat, "amount": float(total)} for cat, total in result]
+    
+    @staticmethod
+    def can_user_create_transaction(db: Session, user_id: str) -> bool:
+        """Check if user has permission to create transactions (individual or organization)."""
+        # For individual transactions, users can always create their own
+        # For organization contexts, check if user has member+ role
+        from app.models.organization import OrganizationMember, OrganizationRole
+        
+        user_memberships = db.query(OrganizationMember).filter(
+            OrganizationMember.user_id == user_id,
+            OrganizationMember.is_active == True
+        ).all()
+        
+        # If user has no organizations, they can create individual transactions
+        if not user_memberships:
+            return True
+        
+        # If user is a member+ in at least one organization, they can create transactions
+        for membership in user_memberships:
+            if membership.role in [OrganizationRole.owner, OrganizationRole.admin, OrganizationRole.manager, OrganizationRole.member]:
+                return True
+        
+        return False  # Only viewers cannot create transactions

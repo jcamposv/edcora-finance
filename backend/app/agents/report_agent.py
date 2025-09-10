@@ -4,6 +4,7 @@ from typing import Dict, Any, List, Optional
 from sqlalchemy.orm import Session
 from app.core.llm_config import get_openai_config
 from app.services.transaction_service import TransactionService
+from app.services.organization_service import OrganizationService
 from app.models.transaction import TransactionType
 import calendar
 
@@ -41,7 +42,11 @@ class ReportAgent:
             "balance", "estado", "informe", "hasta hoy", "esta semana", "este mes",
             "mes pasado", "semana pasada", "últimos", "ultimos", "balance del mes",
             "mis gastos", "mis ingresos", "total gastos", "total ingresos",
-            "¿cuanto", "¿cuánto", "cómo voy", "como voy"
+            "¿cuanto", "¿cuánto", "cómo voy", "como voy",
+            # Family keywords
+            "gastos familia", "gastos familiares", "balance familia", "balance familiar",
+            "reporte familia", "reporte familiar", "resumen familia", "resumen familiar",
+            "familia gastos", "familiar gastos"
         ]
         
         message_lower = message.lower()
@@ -99,6 +104,14 @@ class ReportAgent:
             print(f"ReportAgent failed: {e}")
             return self._generate_simple_report(transactions_data, currency_symbol, message)
     
+    def _is_family_report_request(self, message: str) -> bool:
+        """Detect if user is requesting a family report."""
+        family_keywords = [
+            "familia", "familiar", "family"
+        ]
+        message_lower = message.lower()
+        return any(keyword in message_lower for keyword in family_keywords)
+    
     def _get_transactions_data(self, user_id: str, db: Session, message: str) -> Dict[str, Any]:
         """Extract transaction data based on the time period mentioned in the message."""
         
@@ -106,15 +119,22 @@ class ReportAgent:
         period = self._extract_time_period(message)
         start_date, end_date = self._get_date_range(period)
         
+        # Check if this is a family report request
+        is_family_report = self._is_family_report_request(message)
+        
         # Debug: Print date range
         print(f"DEBUG: Searching transactions for user {user_id}")
         print(f"DEBUG: Date range: {start_date} to {end_date}")
         print(f"DEBUG: Period: {period}")
+        print(f"DEBUG: Family report: {is_family_report}")
         
-        # Get transactions
-        transactions = TransactionService.get_transactions_by_date_range(
-            db, user_id, start_date, end_date
-        )
+        # Get transactions (individual or family)
+        if is_family_report:
+            transactions = self._get_family_transactions(db, user_id, start_date, end_date)
+        else:
+            transactions = TransactionService.get_transactions_by_date_range(
+                db, user_id, start_date, end_date
+            )
         
         # Debug: Print results
         print(f"DEBUG: Found {len(transactions)} transactions")
@@ -139,6 +159,7 @@ class ReportAgent:
             "period": period,
             "start_date": start_date,
             "end_date": end_date,
+            "is_family_report": is_family_report,
             "total_transactions": len(transactions),
             "total_expenses": total_expenses,
             "total_income": total_income,
@@ -255,7 +276,9 @@ class ReportAgent:
         
         period_text = period_names.get(data["period"], data["period"])
         
-        report = f"📊 **Resumen de {period_text}**\n\n"
+        # Add family indicator if it's a family report
+        report_type = "📊 **Resumen Familiar de" if data.get("is_family_report", False) else "📊 **Resumen de"
+        report = f"{report_type} {period_text}**\n\n"
         report += f"💸 Gastos: {currency_symbol}{data['total_expenses']:,.0f}\n"
         report += f"💰 Ingresos: {currency_symbol}{data['total_income']:,.0f}\n"
         report += f"📈 Balance: {currency_symbol}{data['net_balance']:,.0f}\n"
@@ -273,3 +296,35 @@ class ReportAgent:
             "report": report.strip(),
             "data": data
         }
+    
+    def _get_family_transactions(self, db: Session, user_id: str, start_date, end_date) -> List:
+        """Get transactions for all organization members the user belongs to."""
+        from datetime import datetime, time
+        
+        # Get user's organizations
+        user_organizations = OrganizationService.get_user_organizations(db, user_id)
+        
+        if not user_organizations:
+            # No organizations, return individual transactions
+            return TransactionService.get_transactions_by_date_range(
+                db, user_id, start_date, end_date
+            )
+        
+        all_transactions = []
+        
+        for organization in user_organizations:
+            # Get all organization members
+            organization_members = OrganizationService.get_organization_members(db, str(organization.id))
+            
+            for member in organization_members:
+                # Get transactions for each member
+                member_transactions = TransactionService.get_transactions_by_date_range(
+                    db, str(member.user_id), start_date, end_date
+                )
+                all_transactions.extend(member_transactions)
+        
+        # Remove duplicates and sort by date
+        unique_transactions = list(set(all_transactions))
+        unique_transactions.sort(key=lambda x: x.date, reverse=True)
+        
+        return unique_transactions

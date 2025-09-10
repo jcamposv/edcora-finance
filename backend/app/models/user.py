@@ -14,5 +14,12 @@ class User(Base):
     plan_type = Column(String, default="free", nullable=False)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     
+    # Existing relationships
     transactions = relationship("Transaction", back_populates="user")
     reports = relationship("Report", back_populates="user")
+    
+    # Organization relationships
+    owned_organizations = relationship("Organization", back_populates="owner")
+    organization_memberships = relationship("OrganizationMember", back_populates="user")
+    sent_invitations = relationship("OrganizationInvitation", foreign_keys="OrganizationInvitation.invited_by", back_populates="inviter")
+    accepted_invitations = relationship("OrganizationInvitation", foreign_keys="OrganizationInvitation.accepted_by", back_populates="accepter")

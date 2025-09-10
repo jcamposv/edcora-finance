@@ -4,6 +4,8 @@ from datetime import datetime, date
 from decimal import Decimal
 from uuid import UUID
 from app.models.transaction import TransactionType
+from app.models.family import FamilyRole
+from app.models.organization import OrganizationType, OrganizationRole
 
 class UserBase(BaseModel):
     phone_number: str
@@ -34,6 +36,7 @@ class TransactionBase(BaseModel):
 
 class TransactionCreate(TransactionBase):
     user_id: UUID
+    organization_id: Optional[UUID] = None  # NULL = personal, UUID = organization transaction
 
 class TransactionUpdate(BaseModel):
     amount: Optional[Decimal] = None
@@ -44,6 +47,7 @@ class TransactionUpdate(BaseModel):
 class Transaction(TransactionBase):
     id: UUID
     user_id: UUID
+    organization_id: Optional[UUID] = None
     date: datetime
     
     class Config:
@@ -76,3 +80,144 @@ class OTPRequest(BaseModel):
 class OTPVerify(BaseModel):
     phone_number: str
     code: str
+
+# Family Schemas
+class FamilyBase(BaseModel):
+    name: str
+    shared_budget: bool = True
+    currency: str = "USD"
+
+class FamilyCreate(FamilyBase):
+    pass
+
+class FamilyUpdate(BaseModel):
+    name: Optional[str] = None
+    shared_budget: Optional[bool] = None
+    currency: Optional[str] = None
+
+class Family(FamilyBase):
+    id: UUID
+    created_by: UUID
+    created_at: datetime
+    
+    class Config:
+        from_attributes = True
+
+class FamilyMemberBase(BaseModel):
+    role: FamilyRole = FamilyRole.member
+    nickname: Optional[str] = None
+
+class FamilyMemberCreate(FamilyMemberBase):
+    family_id: UUID
+    user_id: UUID
+
+class FamilyMemberUpdate(BaseModel):
+    role: Optional[FamilyRole] = None
+    nickname: Optional[str] = None
+
+class FamilyMember(FamilyMemberBase):
+    id: UUID
+    family_id: UUID
+    user_id: UUID
+    is_active: bool
+    joined_at: datetime
+    
+    class Config:
+        from_attributes = True
+
+class FamilyInvitationBase(BaseModel):
+    invited_phone: str
+    role: FamilyRole = FamilyRole.member
+    message: Optional[str] = None
+
+class FamilyInvitationCreate(FamilyInvitationBase):
+    family_id: UUID
+
+class FamilyInvitation(FamilyInvitationBase):
+    id: UUID
+    family_id: UUID
+    invited_by: UUID
+    is_accepted: bool
+    is_expired: bool
+    created_at: datetime
+    accepted_at: Optional[datetime] = None
+    expires_at: datetime
+    
+    class Config:
+        from_attributes = True
+
+
+# Organization Schemas
+class OrganizationBase(BaseModel):
+    name: str
+    type: OrganizationType
+    currency: str = "USD"
+    plan_type: str = "free"
+
+class OrganizationCreate(OrganizationBase):
+    parent_id: Optional[UUID] = None
+
+class OrganizationUpdate(BaseModel):
+    name: Optional[str] = None
+    currency: Optional[str] = None
+    plan_type: Optional[str] = None
+    settings: Optional[dict] = None
+
+class Organization(OrganizationBase):
+    id: UUID
+    parent_id: Optional[UUID] = None
+    owner_id: UUID
+    settings: dict
+    created_at: datetime
+    updated_at: datetime
+    is_active: bool
+    
+    class Config:
+        from_attributes = True
+
+class OrganizationMemberBase(BaseModel):
+    role: OrganizationRole = OrganizationRole.member
+    department: Optional[str] = None
+    nickname: Optional[str] = None
+
+class OrganizationMemberCreate(OrganizationMemberBase):
+    organization_id: UUID
+    user_id: UUID
+
+class OrganizationMemberUpdate(BaseModel):
+    role: Optional[OrganizationRole] = None
+    department: Optional[str] = None
+    nickname: Optional[str] = None
+    permissions: Optional[dict] = None
+
+class OrganizationMember(OrganizationMemberBase):
+    id: UUID
+    organization_id: UUID
+    user_id: UUID
+    permissions: dict
+    joined_at: datetime
+    is_active: bool
+    
+    class Config:
+        from_attributes = True
+
+class OrganizationInvitationBase(BaseModel):
+    invited_phone: str
+    role: OrganizationRole = OrganizationRole.member
+    message: Optional[str] = None
+
+class OrganizationInvitationCreate(OrganizationInvitationBase):
+    organization_id: UUID
+
+class OrganizationInvitation(OrganizationInvitationBase):
+    id: UUID
+    organization_id: UUID
+    invited_by: UUID
+    expires_at: datetime
+    created_at: datetime
+    accepted_at: Optional[datetime] = None
+    accepted_by: Optional[UUID] = None
+    is_active: bool
+    
+    class Config:
+        from_attributes = True
