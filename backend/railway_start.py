@@ -15,15 +15,7 @@ def run_migrations():
         # Change to backend directory where alembic.ini is located
         os.chdir("/app/backend")
         
-        # First, mark the problematic migration as complete without running it
-        print("📋 Marking organizations migration as complete...")
-        result = subprocess.run(
-            ["alembic", "stamp", "20250909_201123"], 
-            capture_output=True, text=True, check=True
-        )
-        
-        # Now run remaining migrations
-        print("🔄 Running remaining migrations...")
+        # Run migrations using simple alembic command
         result = subprocess.run(
             ["alembic", "upgrade", "head"], 
             capture_output=True, text=True, check=True
