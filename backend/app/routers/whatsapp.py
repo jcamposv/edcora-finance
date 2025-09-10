@@ -13,6 +13,7 @@ from app.agents.categorizer_agent import CategorizerAgent
 from app.agents.report_agent import ReportAgent
 from app.agents.organization_agent import OrganizationAgent
 from app.agents.context_agent import ContextAgent
+from app.agents.help_agent import HelpAgent
 from app.services.conversation_state import conversation_state
 from app.models.transaction import TransactionType
 from app.core.schemas import TransactionCreate
@@ -27,6 +28,7 @@ categorizer_agent = CategorizerAgent()
 report_agent = ReportAgent()
 organization_agent = OrganizationAgent()
 context_agent = ContextAgent()
+help_agent = HelpAgent()
 
 @router.post("/webhook")
 async def whatsapp_webhook(
@@ -99,6 +101,20 @@ async def whatsapp_webhook(
                 )
                 return {"status": "organization_error"}
         
+        # Check if this is a help request
+        if help_agent.is_help_request(message_body):
+            try:
+                help_result = help_agent.answer_question(message_body, str(user.id), db)
+                whatsapp_service.send_message(From, help_result["message"])
+                return {"status": "help_provided", "success": help_result["success"]}
+                
+            except Exception as e:
+                print(f"Error processing help request: {e}")
+                # Fallback to contextual help
+                contextual_help = help_agent.get_contextual_help(str(user.id), db)
+                whatsapp_service.send_message(From, contextual_help["message"])
+                return {"status": "help_fallback"}
+        
         # Check if this is a report request
         if report_agent.is_report_request(message_body):
             try:
@@ -133,6 +149,18 @@ async def whatsapp_webhook(
                     "Ocurrió un error generando tu reporte. Por favor intenta nuevamente."
                 )
                 return {"status": "report_error"}
+        
+        # Before trying to parse as transaction, check if it looks like a command that wasn't understood
+        suspicious_commands = [
+            "crear", "create", "nueva", "nuevo", "invitar", "invite", "help", "ayuda",
+            "como", "cómo", "how", "miembros", "members", "salir", "leave", "comandos"
+        ]
+        
+        if any(word in message_body.lower() for word in suspicious_commands):
+            # This looks like a command but wasn't recognized, provide help
+            contextual_help = help_agent.get_contextual_help(str(user.id), db)
+            whatsapp_service.send_message(From, contextual_help["message"])
+            return {"status": "unrecognized_command_help"}
         
         # Parse as transaction
         return handle_new_transaction(From, message_body, user, phone_number, db)
