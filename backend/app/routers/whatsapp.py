@@ -163,11 +163,9 @@ async def whatsapp_webhook(
                 print("🔄 Detected report request in fallback, routing to ReportAgent")
                 try:
                     from app.agents.report_agent import ReportAgent
-                    from app.services.user_service import UserService
                     
                     report_agent = ReportAgent()
-                    user_obj = UserService.get_user(db, str(user.id))
-                    currency_symbol = "₡" if user_obj and user_obj.currency == "CRC" else "$"
+                    currency_symbol = "₡" if user and user.currency == "CRC" else "$"
                     
                     result = report_agent.generate_report(message_body, str(user.id), db, currency_symbol)
                     
@@ -180,6 +178,8 @@ async def whatsapp_webhook(
                         
                 except Exception as report_error:
                     print(f"❌ Error in fallback report: {report_error}")
+                    import traceback
+                    print(f"❌ Report error traceback: {traceback.format_exc()}")
             
             # If not a report, then fallback to transaction parsing
             return handle_new_transaction(From, message_body, user, phone_number, db)
