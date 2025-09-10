@@ -154,12 +154,13 @@ class PrivacyAgent:
                 - Timeframe de eliminación
                 
                 IMPORTANTE:
-                - Sé específico y técnico pero comprensible
-                - Da ejemplos concretos
-                - Incluye acciones que puede tomar
+                - Sé específico pero CONCISO (máximo 1200 caracteres)
+                - Da ejemplos concretos pero breves
+                - Incluye 1-2 acciones específicas que puede tomar
                 - Sé 100% honesto y transparente
+                - Si la respuesta es muy larga, enfócate en lo más importante
                 
-                Responde en español de forma clara y profesional.
+                Responde en español de forma clara, profesional y BREVE.
                 """,
                 agent=self.agent,
                 expected_output="Respuesta detallada sobre privacidad y protección de datos"
@@ -168,11 +169,9 @@ class PrivacyAgent:
             crew = Crew(agents=[self.agent], tasks=[task])
             result = crew.kickoff()
             
-            return {
-                "success": True,
-                "message": str(result).strip(),
-                "type": "privacy_response"
-            }
+            from app.utils.message_utils import create_whatsapp_response
+            response_text = str(result).strip()
+            return create_whatsapp_response(True, response_text, "privacy_response")
             
         except Exception as e:
             print(f"Error in privacy AI response: {e}")

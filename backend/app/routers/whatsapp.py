@@ -133,8 +133,15 @@ async def whatsapp_webhook(
             result = master_router.route_and_process(message_body, str(user.id), db)
             
             if result.get("success", False):
+                # Send main message
                 whatsapp_service.send_message(From, result["message"])
-                return {"status": "master_router_success", "action": result.get("action", "unknown")}
+                
+                # Send additional messages if they exist (for long responses)
+                additional_messages = result.get("additional_messages", [])
+                for additional_msg in additional_messages:
+                    whatsapp_service.send_message(From, additional_msg)
+                
+                return {"status": "master_router_success", "action": result.get("action", "unknown"), "messages_sent": 1 + len(additional_messages)}
             else:
                 # If master router couldn't handle it, send the error message
                 whatsapp_service.send_message(From, result.get("message", "No pude procesar tu mensaje."))
