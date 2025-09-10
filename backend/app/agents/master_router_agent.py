@@ -140,8 +140,13 @@ class MasterRouterAgent:
                    
                    Para organizaciones:
                    - organization_name: nombre de la organización
-                   - person_to_invite: persona a invitar
-                   - phone_number: número si se proporciona
+                   - person_to_invite: persona a invitar (solo si no hay número)
+                   - phone_number: número de teléfono si se detecta
+                   
+                   DETECCIÓN DE TELÉFONOS:
+                   - "+50686956438" → phone_number: "+50686956438"
+                   - "506 8695 6438" → phone_number: "+50686956438"
+                   - "8695-6438" → phone_number: "+50686956438"
                 
                 3. CASOS ESPECIALES:
                    - "acepto" = DEFINITIVAMENTE accept_invitation
@@ -149,7 +154,14 @@ class MasterRouterAgent:
                    - "gaste 4000 en Gymgo" = transacción de 4000 en contexto Gymgo
                    - "agregar familia Campos Carranza" = create_organization con nombre "Campos Carranza"
                    - "crear empresa MiEmpresa" = create_organization con nombre "MiEmpresa"
-                   - "invitar a mi esposa" = invite_member con persona "mi esposa"
+                   
+                   INVITACIONES CON NÚMEROS:
+                   - "Invita a +50686956438" = invite_member con phone_number "+50686956438"
+                   - "agregar +506..." = invite_member con phone_number detectado
+                   - "invitar mi esposa +506..." = invite_member con phone_number detectado
+                   
+                   INVITACIONES SIN NÚMEROS:
+                   - "invitar a mi esposa" = invite_member con person_to_invite "mi esposa"
                 
                 RESPONDE EN JSON:
                 {{
@@ -213,16 +225,16 @@ class MasterRouterAgent:
             return self._handle_smart_transaction(parameters, user_id, db)
         
         elif action_type == "create_organization":
-            return self._handle_organization_action("create", parameters, user_id, db)
+            return self._handle_organization_action("create", parameters, user_id, db, original_message)
         
         elif action_type == "invite_member":
-            return self._handle_organization_action("invite", parameters, user_id, db)
+            return self._handle_organization_action("invite", parameters, user_id, db, original_message)
         
         elif action_type == "list_members":
-            return self._handle_organization_action("list", parameters, user_id, db)
+            return self._handle_organization_action("list", parameters, user_id, db, original_message)
         
         elif action_type == "leave_organization":
-            return self._handle_organization_action("leave", parameters, user_id, db)
+            return self._handle_organization_action("leave", parameters, user_id, db, original_message)
         
         elif action_type == "generate_report":
             return self._handle_report_request(original_message, user_id, db)
@@ -306,7 +318,7 @@ class MasterRouterAgent:
             "transaction_id": str(transaction.id)
         }
     
-    def _handle_organization_action(self, action: str, parameters: Dict, user_id: str, db: Session) -> Dict[str, Any]:
+    def _handle_organization_action(self, action: str, parameters: Dict, user_id: str, db: Session, original_message: str = "") -> Dict[str, Any]:
         """Handle organization actions directly."""
         from app.agents.organization_agent import OrganizationAgent
         org_agent = OrganizationAgent()
@@ -322,9 +334,40 @@ class MasterRouterAgent:
             phone_number = parameters.get("phone_number")
             person_to_invite = parameters.get("person_to_invite", "")
             
+            # If AI didn't detect phone, try manual extraction
+            if not phone_number and original_message:
+                # Get original message to try pattern matching
+                import re
+                original_msg = original_message
+                phone_patterns = [
+                    r"(\+506\s?\d{4}\s?\d{4})",  # +506 1234 5678
+                    r"(\+506\d{8})",            # +50612345678
+                    r"(506\s?\d{4}\s?\d{4})",   # 506 1234 5678
+                    r"(506\d{8})",              # 50612345678
+                    r"(\d{4}[-\s]?\d{4})",      # 1234-5678 or 1234 5678
+                    r"(\+\d{1,3}\d{8,})"       # Generic international
+                ]
+                
+                for pattern in phone_patterns:
+                    match = re.search(pattern, original_msg)
+                    if match:
+                        number = match.group(1)
+                        # Normalize the number
+                        if not number.startswith('+'):
+                            if number.startswith('506'):
+                                phone_number = '+' + number
+                            else:
+                                # Assume Costa Rica if no country code
+                                phone_number = '+506' + number.replace('-', '').replace(' ', '')
+                        else:
+                            phone_number = number.replace(' ', '').replace('-', '')
+                        break
+            
             if phone_number:
+                print(f"📞 Phone detected: {phone_number}")
                 return org_agent._handle_invite_member_natural(phone_number, user_id, db)
             else:
+                print(f"👤 No phone, asking for phone with context: {person_to_invite}")
                 return org_agent._ask_for_phone_number_with_context(person_to_invite)
         
         elif action == "list":
@@ -372,8 +415,43 @@ class MasterRouterAgent:
         if any(word in message_lower for word in ["acepto", "aceptar", "quiero unirme"]):
             return self._handle_accept_invitation(user_id, db)
         
+        # Invitations with phone numbers
+        elif any(word in message_lower for word in ["invitar", "invita", "agregar"]) and ("+" in message or any(char.isdigit() for char in message)):
+            # Direct phone number invitation - extract number
+            import re
+            phone_patterns = [
+                r"(\+506\s?\d{4}\s?\d{4})",  # +506 1234 5678
+                r"(\+506\d{8})",            # +50612345678
+                r"(506\s?\d{4}\s?\d{4})",   # 506 1234 5678
+                r"(506\d{8})",              # 50612345678
+                r"(\d{4}[-\s]?\d{4})",      # 1234-5678 or 1234 5678
+                r"(\+\d{1,3}\d{8,})"       # Generic international
+            ]
+            
+            phone_number = None
+            for pattern in phone_patterns:
+                match = re.search(pattern, message)
+                if match:
+                    number = match.group(1)
+                    # Normalize the number
+                    if not number.startswith('+'):
+                        if number.startswith('506'):
+                            phone_number = '+' + number
+                        else:
+                            # Assume Costa Rica if no country code
+                            phone_number = '+506' + number.replace('-', '').replace(' ', '')
+                    else:
+                        phone_number = number.replace(' ', '').replace('-', '')
+                    break
+            
+            if phone_number:
+                print(f"📞 Fallback detected phone: {phone_number}")
+                from app.agents.organization_agent import OrganizationAgent
+                org_agent = OrganizationAgent()
+                return org_agent._handle_invite_member_natural(phone_number, user_id, db)
+        
         # Create organization - Let the org agent handle name extraction intelligently
-        elif any(phrase in message_lower for phrase in ["crear familia", "crear empresa", "nueva familia", "nueva empresa", "agregar familia", "agregar empresa"]):
+        elif any(phrase in message_lower for phrase in ["crear familia", "crear empresa", "nueva familia", "nueva empresa", "agregar familia", "agregar empresa", "crear organizacion"]):
             # Pass the full message to let OrganizationAgent extract the name intelligently
             from app.agents.organization_agent import OrganizationAgent
             org_agent = OrganizationAgent()
