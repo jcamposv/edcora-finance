@@ -46,6 +46,7 @@ class OrganizationAgent:
             "familia", "family", "familiares", "compartir gastos", "crear familia", "nueva familia",
             "empresa", "company", "negocio", "corporación", "crear empresa", "nueva empresa",
             "equipo", "team", "grupo", "departamento", "crear equipo", "nuevo equipo",
+            "organizacion", "organización", "crear organizacion", "nueva organizacion",
             "invitar", "invite", "agregar", "roommate", "compañero", "esposa", "esposo",
             "hermana", "hermano", "colega", "empleado", "socio", "mi esposa", "mi hermano",
             "miembros", "members", "quienes", "quien esta", "mostrar miembros",
@@ -154,7 +155,7 @@ class OrganizationAgent:
                 
                 ACCIONES POSIBLES:
                 1. create_organization - Crear organización
-                   Ejemplos: "crear familia", "nueva empresa Gymgo", "hacer equipo"
+                   Ejemplos: "crear familia", "nueva empresa Gymgo", "hacer equipo", "crear organizacion", "nueva familia Mi Casa"
                    
                 2. invite_member - Invitar persona
                    CON NÚMERO: "invitar +50612345678", "agregar +506... admin"
@@ -173,9 +174,17 @@ class OrganizationAgent:
                 - Para create_organization: nombre de la organización
                 - Para invite_member: número de teléfono (si existe) y persona a invitar
                 
-                IMPORTANTE:
-                - "crear familia" SIN nombre → pedir nombre
-                - "invitar a mi esposa" SIN número → pedir número
+                DETECCIÓN INTELIGENTE DE NÚMEROS:
+                - "+50686956438" → teléfono completo detectado
+                - "506 8695 6438" → teléfono sin + detectado
+                - "8695-6438" → teléfono local detectado
+                - "invita a +50686956438" → acción COMPLETA, NO preguntar más
+                - "invitar mi esposa" → sin número, SÍ preguntar teléfono
+                
+                EJEMPLOS CRÍTICOS:
+                - "Invita a +50686956438" → phone_number: "+50686956438", person_to_invite: null
+                - "agregar +506..." → phone_number: detectar número completo
+                - "invitar mi esposa" → phone_number: null, person_to_invite: "mi esposa"
                 
                 Responde en JSON:
                 {{
@@ -211,7 +220,7 @@ class OrganizationAgent:
         """Parse AI response when JSON parsing fails."""
         response_lower = response.lower()
         
-        if "create_organization" in response_lower or any(phrase in original_message.lower() for phrase in ["crear familia", "nueva familia", "crear empresa", "nueva empresa"]):
+        if "create_organization" in response_lower or any(phrase in original_message.lower() for phrase in ["crear familia", "nueva familia", "crear empresa", "nueva empresa", "crear organizacion", "nueva organizacion", "hacer familia", "hacer empresa"]):
             organization_name = self._extract_organization_name_fallback(original_message)
             return {"action": "create_organization", "organization_name": organization_name, "confidence": "media"}
         elif "invite_member" in response_lower:
@@ -233,10 +242,12 @@ class OrganizationAgent:
             r"(?:crear|nueva?)\s+empresa\s+(.+)",
             r"(?:crear|nuevo)\s+equipo\s+(.+)",
             r"(?:crear|nuevo)\s+grupo\s+(.+)",
+            r"(?:crear|nueva?)\s+organizaci[oó]n\s+(.+)",
             r"familia\s+(.+?)(?:\s|$)",
             r"empresa\s+(.+?)(?:\s|$)",
             r"equipo\s+(.+?)(?:\s|$)",
             r"grupo\s+(.+?)(?:\s|$)",
+            r"organizaci[oó]n\s+(.+?)(?:\s|$)",
             r"casa\s+(.+?)(?:\s|$)"
         ]
         
@@ -251,10 +262,82 @@ class OrganizationAgent:
         return None
     
     def _extract_phone_fallback(self, message: str) -> Optional[str]:
-        """Extract phone number from message."""
-        phone_pattern = r"(\+\d{1,3}\d{8,})"
-        match = re.search(phone_pattern, message)
-        return match.group(1) if match else None
+        """Extract phone number from message using AI or regex fallback."""
+        if self.has_openai and self.agent:
+            return self._ai_extract_phone_number(message)
+        else:
+            # Enhanced regex patterns for Costa Rican numbers
+            phone_patterns = [
+                r"(\+506\s?\d{4}\s?\d{4})",  # +506 1234 5678
+                r"(\+506\d{8})",            # +50612345678
+                r"(506\s?\d{4}\s?\d{4})",   # 506 1234 5678
+                r"(506\d{8})",              # 50612345678
+                r"(\d{4}[-\s]?\d{4})",      # 1234-5678 or 1234 5678
+                r"(\+\d{1,3}\d{8,})"       # Generic international
+            ]
+            
+            for pattern in phone_patterns:
+                match = re.search(pattern, message)
+                if match:
+                    number = match.group(1)
+                    # Normalize the number
+                    if not number.startswith('+'):
+                        if number.startswith('506'):
+                            number = '+' + number
+                        else:
+                            # Assume Costa Rica if no country code
+                            number = '+506' + number.replace('-', '').replace(' ', '')
+                    return number.replace(' ', '').replace('-', '')
+            
+            return None
+    
+    def _ai_extract_phone_number(self, message: str) -> Optional[str]:
+        """Use AI to extract phone number from message."""
+        try:
+            task = Task(
+                description=f"""
+                Extrae el número de teléfono del siguiente mensaje:
+                
+                MENSAJE: "{message}"
+                
+                FORMATOS POSIBLES:
+                - +50612345678
+                - +506 1234 5678
+                - 506 1234 5678
+                - 50612345678
+                - 1234-5678 (asumir +506)
+                - 12345678 (asumir +506)
+                
+                IMPORTANTE:
+                - Si encuentras un número, devuélvelo en formato +50612345678
+                - Si NO hay número, devuelve "null"
+                - No incluyas texto adicional
+                
+                Ejemplos:
+                - "Invita a +50686956438" → "+50686956438"
+                - "agregar mi hermana" → "null"
+                - "506 8695 6438" → "+50686956438"
+                """,
+                agent=self.agent,
+                expected_output="Número de teléfono en formato +50612345678 o 'null'"
+            )
+            
+            crew = Crew(agents=[self.agent], tasks=[task])
+            result = str(crew.kickoff()).strip()
+            
+            if result.lower() == 'null' or not result:
+                return None
+            
+            # Clean and validate the result
+            cleaned = result.replace('"', '').replace("'", '').strip()
+            if cleaned.startswith('+') and len(cleaned) >= 10:
+                return cleaned
+            
+            return None
+            
+        except Exception as e:
+            print(f"Error in AI phone extraction: {e}")
+            return None
     
     def _execute_organization_action(self, intent: dict, message: str, user_id: str, db: Session) -> Dict[str, Any]:
         """Execute the organization action based on AI-detected intent."""
@@ -272,10 +355,14 @@ class OrganizationAgent:
             person_to_invite = intent.get("person_to_invite", "")
             
             if phone:
+                # Phone number provided - proceed with invitation
                 return self._handle_invite_member_natural(phone, user_id, db)
-            else:
-                # Ask for phone number but include context of who they want to invite
+            elif person_to_invite:
+                # Person described but no phone - ask for phone with context
                 return self._ask_for_phone_number_with_context(person_to_invite)
+            else:
+                # Generic invitation request - ask for details
+                return self._ask_for_phone_number()
                 
         elif action == "list_members":
             return self._handle_list_members_natural(user_id, db)
@@ -587,7 +674,7 @@ Si te invitaron, solo di 'acepto' o 'sí quiero unirme'
         message_lower = message.lower().strip()
         
         # Simple pattern matching for basic commands
-        if "crear" in message_lower and ("familia" in message_lower or "empresa" in message_lower):
+        if "crear" in message_lower and ("familia" in message_lower or "empresa" in message_lower or "organizacion" in message_lower):
             return self._handle_create_organization_simple(message, user_id, db)
         elif "miembros" in message_lower or "quienes" in message_lower:
             return self._handle_list_members_natural(user_id, db)
@@ -602,8 +689,10 @@ Si te invitaron, solo di 'acepto' o 'sí quiero unirme'
         patterns = [
             r"crear\s+familia\s+(.+)",
             r"crear\s+empresa\s+(.+)",
+            r"crear\s+organizaci[oó]n\s+(.+)",
             r"nueva\s+familia\s+(.+)",
-            r"nueva\s+empresa\s+(.+)"
+            r"nueva\s+empresa\s+(.+)",
+            r"nueva\s+organizaci[oó]n\s+(.+)"
         ]
         
         organization_name = None
