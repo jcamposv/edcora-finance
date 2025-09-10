@@ -450,10 +450,43 @@ class OrganizationAgent:
                 message=f"¡Te invitamos a unirte a '{organization.name}' en Edcora Finanzas!"
             )
             
-            return {
-                "success": True,
-                "message": f"🎉 ¡Listo! Le envié una invitación a {phone} para unirse a '{organization.name}'.\n\nLa persona solo necesita escribir algo como 'acepto' o 'sí quiero unirme' para formar parte del grupo.\n\n¿Hay alguien más que quieras invitar?"
-            }
+            # Send WhatsApp invitation message to the invited person
+            from app.services.whatsapp_service import WhatsAppService
+            whatsapp_service = WhatsAppService()
+            
+            # Get inviter info for personal message
+            from app.services.user_service import UserService
+            inviter = UserService.get_user(db, user_id)
+            inviter_name = inviter.name if inviter else "Alguien"
+            
+            # Create concise invitation message
+            invitation_message = f"""🎉 **Invitación a Edcora Finanzas**
+
+¡Hola! {inviter_name} te invitó a '{organization.name}' para llevar control de gastos juntos.
+
+✅ **Para aceptar:** Responde 'acepto'
+❌ **Para rechazar:** Ignora este mensaje
+
+🔐 **Tu privacidad está protegida:**
+• Solo compartes gastos con miembros de esta organización
+• Puedes salirte cuando quieras
+
+¿Aceptas la invitación? 😊"""
+            
+            # Send the invitation message
+            invitation_sent = whatsapp_service.send_message(phone, invitation_message)
+            
+            if invitation_sent:
+                return {
+                    "success": True,
+                    "message": f"🎉 ¡Listo! Le envié una invitación por WhatsApp a {phone} para unirse a '{organization.name}'.\n\nLa persona recibirá un mensaje explicando cómo aceptar la invitación.\n\n¿Hay alguien más que quieras invitar?"
+                }
+            else:
+                # Invitation created in DB but WhatsApp failed
+                return {
+                    "success": True,
+                    "message": f"✅ Invitación creada para {phone} en '{organization.name}'.\n\n⚠️ No pude enviar el mensaje de WhatsApp automáticamente. La persona puede escribir 'acepto' cuando se comunique contigo.\n\n¿Hay alguien más que quieras invitar?"
+                }
             
         except ValueError as e:
             if "already invited" in str(e).lower():
