@@ -13,12 +13,23 @@ def run_migrations():
         print("🔄 Running database migrations...")
         print(f"Current working directory: {os.getcwd()}")
         
-        # Change to the directory containing alembic.ini
-        os.chdir("/app")  # Railway workdir
-        print(f"Changed to directory: {os.getcwd()}")
+        # Check if alembic.ini exists
+        alembic_config = "/app/alembic.ini"
+        if os.path.exists(alembic_config):
+            print(f"✅ Found alembic config at: {alembic_config}")
+        else:
+            print(f"❌ No alembic.ini found at: {alembic_config}")
+            # List files in /app to debug
+            print("Files in /app:")
+            for item in os.listdir("/app"):
+                print(f"  {item}")
+            return
         
-        result = subprocess.run(["alembic", "upgrade", "head"], 
-                              capture_output=True, text=True, check=True)
+        # Run alembic with explicit config file
+        result = subprocess.run([
+            "alembic", "-c", alembic_config, "upgrade", "head"
+        ], capture_output=True, text=True, check=True)
+        
         print("✅ Migrations completed successfully")
         if result.stdout.strip():
             print(f"STDOUT: {result.stdout}")
