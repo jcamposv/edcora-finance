@@ -130,7 +130,9 @@ async def whatsapp_webhook(
         
         # Use Master Router for intelligent processing
         try:
+            print(f"🤖 Processing with MasterRouter: '{message_body}'")
             result = master_router.route_and_process(message_body, str(user.id), db)
+            print(f"🤖 MasterRouter result: {result}")
             
             if result.get("success", False):
                 # Send main message
@@ -148,8 +150,38 @@ async def whatsapp_webhook(
                 return {"status": "master_router_handled", "action": result.get("action", "unknown")}
                 
         except Exception as e:
-            print(f"Error in master router: {e}")
-            # Fallback to old transaction parsing
+            print(f"❌ CRITICAL Error in master router: {e}")
+            print(f"❌ Error type: {type(e).__name__}")
+            import traceback
+            print(f"❌ Traceback: {traceback.format_exc()}")
+            
+            # Instead of falling back to transaction parsing, try direct report detection
+            message_lower = message_body.lower()
+            
+            # Check if it's clearly a report request
+            if any(word in message_lower for word in ["resumen", "reporte", "balance", "cuánto", "cuanto", "mis gastos", "total gastos", "gastos del", "como voy", "cómo voy"]):
+                print("🔄 Detected report request in fallback, routing to ReportAgent")
+                try:
+                    from app.agents.report_agent import ReportAgent
+                    from app.services.user_service import UserService
+                    
+                    report_agent = ReportAgent()
+                    user_obj = UserService.get_user(db, str(user.id))
+                    currency_symbol = "₡" if user_obj and user_obj.currency == "CRC" else "$"
+                    
+                    result = report_agent.generate_report(message_body, str(user.id), db, currency_symbol)
+                    
+                    if result.get("success", False):
+                        whatsapp_service.send_message(From, result.get("report", "Reporte generado"))
+                        return {"status": "fallback_report_success"}
+                    else:
+                        whatsapp_service.send_message(From, "No pude generar el reporte en este momento.")
+                        return {"status": "fallback_report_failed"}
+                        
+                except Exception as report_error:
+                    print(f"❌ Error in fallback report: {report_error}")
+            
+            # If not a report, then fallback to transaction parsing
             return handle_new_transaction(From, message_body, user, phone_number, db)
         
     except Exception as e:
