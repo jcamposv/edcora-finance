@@ -153,7 +153,8 @@ async def whatsapp_webhook(
         # Before trying to parse as transaction, check if it looks like a command that wasn't understood
         suspicious_commands = [
             "crear", "create", "nueva", "nuevo", "invitar", "invite", "help", "ayuda",
-            "como", "cómo", "how", "miembros", "members", "salir", "leave", "comandos"
+            "como", "cómo", "how", "miembros", "members", "salir", "leave", "comandos",
+            "agregar", "agrego", "colega", "compañero", "rol", "role"
         ]
         
         if any(word in message_body.lower() for word in suspicious_commands):

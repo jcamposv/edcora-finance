@@ -60,7 +60,9 @@ class HelpAgent:
             "cómo", "como", "how", "ayuda", "help", "qué puedo", "que puedo",
             "comandos", "commands", "funciones", "features", "manual", "instrucciones",
             "no sé", "no se", "don't know", "confused", "perdido", "lost",
-            "tutorial", "guía", "guide", "explicar", "explain"
+            "tutorial", "guía", "guide", "explicar", "explain", "agregar", "add",
+            "agrego", "invito", "invite", "rol", "role", "colega", "colleague",
+            "compañero", "partner", "miembro", "member"
         ]
     
     def is_help_request(self, message: str) -> bool:
@@ -78,6 +80,16 @@ class HelpAgent:
         ]
         
         if any(pattern in message_lower for pattern in question_patterns):
+            return True
+        
+        # Action-based questions (without question marks)
+        action_questions = [
+            "como agrego", "como agregar", "como invito", "como invitar",
+            "como creo", "como crear", "como hago", "como hacer",
+            "agregar colega", "invitar colega", "agregar compañero"
+        ]
+        
+        if any(pattern in message_lower for pattern in action_questions):
             return True
             
         return False
@@ -189,10 +201,10 @@ class HelpAgent:
                 }
         
         # Invitation-related help
-        elif any(word in question_lower for word in ["invitar", "invite", "agregar", "colega", "rol", "role"]):
+        elif any(word in question_lower for word in ["invitar", "invite", "agregar", "colega", "rol", "role", "compañero", "miembro"]):
             return {
                 "success": True,
-                "message": "👥 **Invitar Miembros:**\n\n• Invitar +50612345678\n• Invitar +50612345678 admin\n• Invitar +50612345678 viewer\n\n**Roles:** admin, member, viewer\n\nSolo propietarios/admins pueden invitar.",
+                "message": "👥 **Agregar Colegas con Rol:**\n\n• `invitar +50612345678 admin` - Administrador\n• `invitar +50612345678 member` - Miembro\n• `invitar +50612345678 viewer` - Solo observador\n\n**Roles disponibles:**\n👑 admin - Puede invitar/remover\n👤 member - Agregar gastos\n👁️ viewer - Solo ver reportes\n\n¡Solo propietarios/admins pueden invitar!",
                 "type": "help_response"
             }
         
