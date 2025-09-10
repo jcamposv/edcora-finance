@@ -17,11 +17,23 @@ depends_on = None
 
 
 def upgrade() -> None:
-    # Create organization_type enum
-    op.execute("CREATE TYPE organization_type AS ENUM ('family', 'team', 'department', 'company')")
+    # Create organization_type enum (skip if exists)
+    op.execute("""
+        DO $$ BEGIN
+            CREATE TYPE organization_type AS ENUM ('family', 'team', 'department', 'company');
+        EXCEPTION
+            WHEN duplicate_object THEN null;
+        END $$;
+    """)
     
-    # Create organization_role enum
-    op.execute("CREATE TYPE organization_role AS ENUM ('owner', 'admin', 'manager', 'member', 'viewer', 'accountant')")
+    # Create organization_role enum (skip if exists)
+    op.execute("""
+        DO $$ BEGIN
+            CREATE TYPE organization_role AS ENUM ('owner', 'admin', 'manager', 'member', 'viewer', 'accountant');
+        EXCEPTION
+            WHEN duplicate_object THEN null;
+        END $$;
+    """)
     
     # Create organizations table
     op.create_table('organizations',
