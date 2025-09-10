@@ -121,22 +121,23 @@ class TransactionService:
     
     @staticmethod
     def can_user_create_transaction(db: Session, user_id: str) -> bool:
-        """Check if user has permission to create transactions (individual or family)."""
+        """Check if user has permission to create transactions (individual or organization)."""
         # For individual transactions, users can always create their own
-        # For family contexts, check if user has member+ role
-        from app.services.family_service import FamilyService
-        from app.models.family import FamilyRole
+        # For organization contexts, check if user has member+ role
+        from app.models.organization import OrganizationMember, OrganizationRole
         
-        user_families = FamilyService.get_user_families(db, user_id)
+        user_memberships = db.query(OrganizationMember).filter(
+            OrganizationMember.user_id == user_id,
+            OrganizationMember.is_active == True
+        ).all()
         
-        # If user has no families, they can create individual transactions
-        if not user_families:
+        # If user has no organizations, they can create individual transactions
+        if not user_memberships:
             return True
         
-        # If user is a member in at least one family, they can create transactions
-        for family in user_families:
-            role = FamilyService.get_member_role(db, str(family.id), user_id)
-            if role in [FamilyRole.admin, FamilyRole.member]:
+        # If user is a member+ in at least one organization, they can create transactions
+        for membership in user_memberships:
+            if membership.role in [OrganizationRole.owner, OrganizationRole.admin, OrganizationRole.manager, OrganizationRole.member]:
                 return True
         
         return False  # Only viewers cannot create transactions

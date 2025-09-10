@@ -294,16 +294,22 @@ class ContextAgent:
             {"type": "personal", "id": None, "name": "Personal"}
         ]
         
-        # Get user's families (for now, until we implement full organizations)
+        # Get user's organizations
         try:
-            user_families = FamilyService.get_user_families(db, user_id)
-            for family in user_families:
+            from app.models.organization import Organization, OrganizationMember
+            
+            user_organizations = db.query(Organization).join(OrganizationMember).filter(
+                OrganizationMember.user_id == user_id,
+                OrganizationMember.is_active == True
+            ).all()
+            
+            for org in user_organizations:
                 contexts.append({
-                    "type": "family",
-                    "id": str(family.id),
-                    "name": family.name
+                    "type": org.type.value,  # family, team, department, company
+                    "id": str(org.id),
+                    "name": org.name
                 })
         except Exception as e:
-            print(f"Error getting user families: {e}")
+            print(f"Error getting user organizations: {e}")
         
         return contexts

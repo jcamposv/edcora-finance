@@ -1,8 +1,8 @@
 from typing import Dict, Any, Optional
 from sqlalchemy.orm import Session
-from app.services.family_service import FamilyService
+from app.services.organization_service import OrganizationService
 from app.services.user_service import UserService
-from app.models.family import FamilyRole
+from app.models.organization import OrganizationType, OrganizationRole
 from app.core.llm_config import get_openai_config
 from crewai import Agent, Task, Crew
 import re
@@ -20,15 +20,15 @@ class FamilyAgent:
                 self.agent = Agent(
                     role="Family Financial Assistant",
                     goal="Help users manage family finances through natural conversation in Spanish. Understand family requests, invitations, and management in a human-like way.",
-                    backstory="""Eres un asistente financiero familiar que habla español de forma natural y amigable. 
+                    backstory="""Eres un asistente financiero que habla español de forma natural y amigable. 
                     Entiendes cuando las personas quieren:
-                    - Crear una familia para compartir gastos
-                    - Invitar familiares o roommates
-                    - Ver quién está en su familia
-                    - Salirse de una familia
-                    - Manejar permisos familiares
+                    - Crear una organización para compartir gastos (familia, equipo, empresa)
+                    - Invitar miembros a organizaciones
+                    - Ver quién está en sus organizaciones
+                    - Salirse de organizaciones
+                    - Manejar permisos de organizaciones
                     
-                    Respondes de forma conversacional, como si fueras un amigo que ayuda con las finanzas familiares.
+                    Respondes de forma conversacional, como si fueras un amigo que ayuda con las finanzas organizacionales.
                     Siempre eres positivo, claro y das ejemplos prácticos.""",
                     verbose=True,
                     allow_delegation=False
@@ -109,40 +109,40 @@ class FamilyAgent:
         try:
             # Get current user context
             user = UserService.get_user(db, user_id)
-            user_families = FamilyService.get_user_families(db, user_id)
-            pending_invitations = FamilyService.get_pending_invitations_for_phone(db, user.phone_number) if user else []
+            user_organizations = OrganizationService.get_user_organizations(db, user_id)
+            pending_invitations = OrganizationService.get_pending_invitations_for_phone(db, user.phone_number) if user else []
             
             # Context for the AI
             context = f"""
             Usuario actual:
             - Teléfono: {user.phone_number if user else 'No disponible'}
-            - Familias actuales: {len(user_families)} familias
+            - Organizaciones actuales: {len(user_organizations)} organizaciones
             - Invitaciones pendientes: {len(pending_invitations)}
             """
             
             task = Task(
                 description=f"""
-                Analiza esta conversación sobre familias financieras y determina la intención del usuario:
+                Analiza esta conversación sobre organizaciones financieras y determina la intención del usuario:
                 
                 Mensaje: "{message}"
                 
                 {context}
                 
                 Determina cuál de estas acciones quiere realizar:
-                1. create_family - Crear una nueva familia (nombres como "familia García", "mi casa", "roommates", etc.)
+                1. create_organization - Crear una nueva organización (nombres como "familia García", "mi casa", "empresa X", etc.)
                 2. invite_member - Invitar a alguien (menciona números de teléfono o "invitar a mi hermana")
-                3. list_members - Ver quién está en la familia ("quiénes están", "miembros", "quién más")
+                3. list_members - Ver quién está en la organización ("quiénes están", "miembros", "quién más")
                 4. accept_invitation - Aceptar una invitación ("acepto", "sí quiero unirme", "está bien")
-                5. leave_family - Salirse de una familia ("me quiero salir", "ya no quiero estar")
+                5. leave_organization - Salirse de una organización ("me quiero salir", "ya no quiero estar")
                 6. help - Necesita ayuda o no está clara la intención
                 
-                Para create_family, extrae también el nombre de la familia del mensaje.
+                Para create_organization, extrae también el nombre de la organización del mensaje.
                 Para invite_member, extrae el número de teléfono si lo menciona.
                 
                 Responde en formato JSON:
                 {{
                     "action": "acción_detectada",
-                    "family_name": "nombre_extraído_si_aplica",
+                    "organization_name": "nombre_extraído_si_aplica",
                     "phone_number": "número_extraído_si_aplica",
                     "confidence": "alta/media/baja"
                 }}
@@ -172,10 +172,10 @@ class FamilyAgent:
         """Parse AI response when JSON parsing fails."""
         response_lower = response.lower()
         
-        if "create_family" in response_lower:
-            # Try to extract family name from original message
-            family_name = self._extract_family_name_fallback(original_message)
-            return {"action": "create_family", "family_name": family_name, "confidence": "media"}
+        if "create_organization" in response_lower:
+            # Try to extract organization name from original message
+            organization_name = self._extract_organization_name_fallback(original_message)
+            return {"action": "create_organization", "organization_name": organization_name, "confidence": "media"}
         elif "invite_member" in response_lower:
             phone = self._extract_phone_fallback(original_message)
             return {"action": "invite_member", "phone_number": phone, "confidence": "media"}
@@ -183,13 +183,13 @@ class FamilyAgent:
             return {"action": "list_members", "confidence": "alta"}
         elif "accept_invitation" in response_lower:
             return {"action": "accept_invitation", "confidence": "alta"}
-        elif "leave_family" in response_lower:
-            return {"action": "leave_family", "confidence": "alta"}
+        elif "leave_organization" in response_lower:
+            return {"action": "leave_organization", "confidence": "alta"}
         else:
             return {"action": "help", "confidence": "baja"}
     
-    def _extract_family_name_fallback(self, message: str) -> Optional[str]:
-        """Extract family name from message using simple patterns."""
+    def _extract_organization_name_fallback(self, message: str) -> Optional[str]:
+        """Extract organization name from message using simple patterns."""
         patterns = [
             r"familia\s+(.+?)(?:\s|$)",
             r"grupo\s+(.+?)(?:\s|$)",
@@ -214,12 +214,12 @@ class FamilyAgent:
         """Execute the family action based on AI-detected intent."""
         action = intent.get("action", "help")
         
-        if action == "create_family":
-            family_name = intent.get("family_name") or self._extract_family_name_fallback(message)
-            if family_name:
-                return self._handle_create_family_natural(family_name, user_id, db)
+        if action == "create_organization":
+            organization_name = intent.get("organization_name") or self._extract_organization_name_fallback(message)
+            if organization_name:
+                return self._handle_create_organization_natural(organization_name, user_id, db)
             else:
-                return self._ask_for_family_name()
+                return self._ask_for_organization_name()
                 
         elif action == "invite_member":
             phone = intent.get("phone_number") or self._extract_phone_fallback(message)
@@ -234,20 +234,20 @@ class FamilyAgent:
         elif action == "accept_invitation":
             return self._handle_accept_invitation_natural(user_id, db)
             
-        elif action == "leave_family":
-            return self._handle_leave_family_natural(user_id, db)
+        elif action == "leave_organization":
+            return self._handle_leave_organization_natural(user_id, db)
             
         else:
-            return self._handle_family_help_natural()
+            return self._handle_organization_help_natural()
     
     def _fallback_process_family_command(self, message: str, user_id: str, db: Session) -> Dict[str, Any]:
         """Fallback to command-based processing when AI is not available."""
         message_lower = message.lower().strip()
         
         try:
-            # Create family commands
-            if self._is_create_family_command(message_lower):
-                return self._handle_create_family(message, user_id, db)
+            # Create organization commands
+            if self._is_create_organization_command(message_lower):
+                return self._handle_create_organization(message, user_id, db)
             
             # Invite commands
             elif self._is_invite_command(message_lower):
@@ -257,34 +257,40 @@ class FamilyAgent:
             elif self._is_list_members_command(message_lower):
                 return self._handle_list_members(user_id, db)
             
-            # List families command
-            elif self._is_list_families_command(message_lower):
-                return self._handle_list_families(user_id, db)
+            # List organizations command
+            elif self._is_list_organizations_command(message_lower):
+                return self._handle_list_organizations(user_id, db)
             
             # Accept invitation command
             elif self._is_accept_invitation_command(message_lower):
                 return self._handle_accept_invitation(user_id, db)
             
-            # Leave family command
-            elif self._is_leave_family_command(message_lower):
-                return self._handle_leave_family(message, user_id, db)
+            # Leave organization command
+            elif self._is_leave_organization_command(message_lower):
+                return self._handle_leave_organization(message, user_id, db)
             
             # Help command
             else:
-                return self._handle_family_help()
+                return self._handle_organization_help()
                 
         except Exception as e:
             return {
                 "success": False,
-                "message": f"Error procesando comando familiar: {str(e)}"
+                "message": f"Error procesando comando de organización: {str(e)}"
             }
     
-    def _is_create_family_command(self, message: str) -> bool:
+    def _is_create_organization_command(self, message: str) -> bool:
         patterns = [
             r"crear familia",
             r"nueva familia", 
+            r"crear empresa",
+            r"nueva empresa",
+            r"crear organización",
+            r"nueva organización",
             r"family create",
-            r"crear.*familia.*(.+)"
+            r"company create",
+            r"crear.*familia.*(.+)",
+            r"crear.*empresa.*(.+)"
         ]
         return any(re.search(pattern, message) for pattern in patterns)
     
@@ -301,9 +307,11 @@ class FamilyAgent:
             "miembros", "members", "familia miembros", "ver miembros"
         ])
     
-    def _is_list_families_command(self, message: str) -> bool:
+    def _is_list_organizations_command(self, message: str) -> bool:
         return any(phrase in message for phrase in [
-            "mis familias", "my families", "familias", "ver familias"
+            "mis familias", "my families", "familias", "ver familias",
+            "mis empresas", "my companies", "empresas", "ver empresas",
+            "mis organizaciones", "organizaciones", "ver organizaciones"
         ])
     
     def _is_accept_invitation_command(self, message: str) -> bool:
@@ -311,9 +319,11 @@ class FamilyAgent:
             "aceptar invitacion", "accept invitation", "unirse", "join"
         ])
     
-    def _is_leave_family_command(self, message: str) -> bool:
+    def _is_leave_organization_command(self, message: str) -> bool:
         return any(phrase in message for phrase in [
-            "salir familia", "leave family", "abandonar familia"
+            "salir familia", "leave family", "abandonar familia",
+            "salir empresa", "leave company", "abandonar empresa",
+            "salir organización", "leave organization", "abandonar organización"
         ])
     
     def _handle_create_family(self, message: str, user_id: str, db: Session) -> Dict[str, Any]:
