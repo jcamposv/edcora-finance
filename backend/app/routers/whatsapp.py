@@ -97,8 +97,13 @@ async def whatsapp_webhook(
 • "Cuánto gasté esta semana"
 • "Balance familiar"
 
+🔧 **Gestionar gastos:**
+• "Mis últimos gastos" - Ver transacciones
+• "Eliminar último gasto" - Borrar
+• "Cambiar gasto a ₡8000" - Editar
+
 ❓ **Ayuda:**
-• Escribe "ayuda" o "¿cómo funciona?"
+• Escribe "ayuda" o "comandos" para ver TODO
 
 🛡️ **Tus Derechos:**
 • Acceso a todos tus datos
