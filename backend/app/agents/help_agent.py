@@ -64,7 +64,8 @@ class HelpAgent:
             "agrego", "invito", "invite", "rol", "role", "colega", "colleague",
             "compañero", "partner", "miembro", "member", "privacidad", "privacy",
             "datos", "data", "seguridad", "security", "derechos", "rights",
-            "eliminar cuenta", "delete account", "gdpr", "protección datos"
+            "eliminar cuenta", "delete account", "gdpr", "protección datos",
+            "qué puedo hacer", "que funciones hay", "menu", "opciones"
         ]
     
     def is_help_request(self, message: str) -> bool:
@@ -260,28 +261,43 @@ class HelpAgent:
     
     def _get_general_help(self) -> str:
         """Provide general system help."""
-        return """🤖 **Edcora Finanzas - Ayuda**
+        return """🤖 **Edcora Finanzas - Comandos Disponibles**
 
-🏢 **Organizaciones:**
-• Crear familia: Mi Hogar
-• Crear empresa: Gymgo
-• Invitar +50612345678 admin
+💰 **REGISTRAR GASTOS/INGRESOS:**
+• "Gasté ₡5000 en almuerzo"
+• "Ingreso ₡50000 salario"
+• "Pagué $25 Netflix"
 
-💰 **Transacciones:**
-• Gasté ₡5000 en almuerzo
-• Ingreso ₡50000 salario
+🔧 **GESTIONAR TRANSACCIONES:**
+• "Mis últimos gastos" - Ver transacciones recientes
+• "Eliminar último gasto" - Borrar gasto
+• "Cambiar último gasto a ₡8000" - Editar monto
+• "Editar gasto de almuerzo" - Modificar gasto
 
-📊 **Reportes:**
-• Resumen de gastos
-• Balance del mes
-• Reporte familiar
+🏢 **ORGANIZACIONES:**
+• "Crear familia Mi Hogar" - Nueva organización
+• "Invitar +50612345678" - Agregar miembro
+• "Miembros" - Ver quién está
+• "Acepto" - Aceptar invitación
+• "Salir familia" - Abandonar grupo
 
-👥 **Miembros:**
-• Miembros (ver quién está)
-• Acepto (aceptar invitación)
-• Salir familia (abandonar)
+📊 **REPORTES:**
+• "Resumen de gastos" - Balance general
+• "Cuánto he gastado este mes"
+• "Balance familiar" - Reporte de grupo
+• "Reporte de la semana"
 
-❓ Pregúntame sobre cualquier función específica!"""
+🔐 **PRIVACIDAD:**
+• "Privacidad" - Info sobre tus datos
+• "Derechos" - Tus derechos de usuario
+• "Eliminar cuenta" - Borrar todo
+
+❓ **MÁS AYUDA:**
+• "¿Cómo creo una familia?"
+• "¿Cómo invito a alguien?"
+• "¿Cómo elimino un gasto?"
+
+💡 **¡Solo escribe naturalmente! Ej: "gasté 5000 en almuerzo"**"""
 
     def get_contextual_help(self, user_id: str, db: Session) -> Dict[str, Any]:
         """Provide contextual help based on user's current state."""

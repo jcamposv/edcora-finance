@@ -128,8 +128,9 @@ class MasterRouterAgent:
                    - "leave_organization": "salir", "abandonar"
                    - "create_transaction": gastos/ingresos ("gasté", "ingreso", "4000 en")
                    - "generate_report": "resumen", "cuánto", "balance", "reporte", "gastos del mes", "mis gastos", "total gastos"
+                   - "manage_transactions": "eliminar gasto", "borrar gasto", "editar gasto", "cambiar gasto", "últimos gastos", "transacciones recientes"
                    - "privacy_request": "privacidad", "datos", "derechos", "seguridad", "eliminar cuenta"
-                   - "help_request": "cómo", "ayuda", "no entiendo"
+                   - "help_request": "cómo", "ayuda", "no entiendo", "comandos", "funciones", "qué puedo hacer"
                 
                 2. PARÁMETROS ESPECÍFICOS:
                    Para transacciones:
@@ -169,6 +170,13 @@ class MasterRouterAgent:
                    - "balance del mes" = generate_report
                    - "mis gastos" = generate_report
                    - "reporte" = generate_report
+                   
+                   GESTIÓN DE TRANSACCIONES:
+                   - "eliminar último gasto" = manage_transactions
+                   - "borrar gasto de almuerzo" = manage_transactions
+                   - "editar gasto" = manage_transactions
+                   - "cambiar último gasto" = manage_transactions
+                   - "mis últimos gastos" = manage_transactions
                 
                 RESPONDE EN JSON:
                 {{
@@ -249,6 +257,9 @@ class MasterRouterAgent:
         
         elif action_type == "generate_report":
             return self._handle_report_request(original_message, user_id, db)
+        
+        elif action_type == "manage_transactions":
+            return self._handle_transaction_management(original_message, user_id, db)
         
         elif action_type == "privacy_request":
             return self._handle_privacy_request(original_message, user_id, db)
@@ -412,6 +423,17 @@ class MasterRouterAgent:
         
         return result
     
+    def _handle_transaction_management(self, message: str, user_id: str, db: Session) -> Dict[str, Any]:
+        """Route to transaction manager agent."""
+        print(f"🔧 Handling transaction management: {message}")
+        from app.agents.transaction_manager_agent import TransactionManagerAgent
+        
+        transaction_manager = TransactionManagerAgent()
+        result = transaction_manager.handle_transaction_management(message, user_id, db)
+        print(f"🔧 Transaction management result: {result.get('success', False)}")
+        
+        return result
+    
     def _handle_privacy_request(self, message: str, user_id: str, db: Session) -> Dict[str, Any]:
         """Route to privacy agent."""
         from app.agents.privacy_agent import PrivacyAgent
@@ -489,6 +511,10 @@ class MasterRouterAgent:
                     "transaction_type": "expense"
                 }, user_id, db)
         
+        # Transaction management requests
+        elif any(word in message_lower for word in ["eliminar gasto", "borrar gasto", "editar gasto", "cambiar gasto", "últimos gastos", "transacciones recientes", "eliminar último", "borrar último", "modificar gasto"]):
+            return self._handle_transaction_management(message, user_id, db)
+        
         # Report requests
         elif any(word in message_lower for word in ["resumen", "reporte", "balance", "cuánto", "cuanto", "mis gastos", "total gastos", "gastos del mes", "como voy", "cómo voy"]):
             return self._handle_report_request(message, user_id, db)
@@ -498,7 +524,7 @@ class MasterRouterAgent:
             return self._handle_privacy_request(message, user_id, db)
         
         # Help requests
-        elif any(word in message_lower for word in ["ayuda", "help", "cómo", "como", "comandos"]):
+        elif any(word in message_lower for word in ["ayuda", "help", "cómo", "como", "comandos", "funciones", "qué puedo hacer"]):
             return self._handle_help_request(message, user_id, db)
         
         # Default
