@@ -148,6 +148,22 @@ class TransactionManagerAgent:
         """Execute the transaction management action."""
         action = analysis.get("action", "list_recent")
         
+        # Check if user is referring to a number in the list (e.g., "gasto 2", "eliminar 3")
+        transaction_index = self._extract_transaction_number(original_message)
+        print(f"🔍 Extracted transaction index: {transaction_index} from message: '{original_message}'")
+        
+        if transaction_index is not None and 1 <= transaction_index <= len(transactions):
+            selected_transaction = transactions[transaction_index - 1]  # Convert to 0-based index
+            transaction_id = str(selected_transaction.id)
+            print(f"🎯 Selected transaction: {transaction_id} (index {transaction_index}, amount: ₡{selected_transaction.amount})")
+            
+            if action == "delete" or any(word in original_message.lower() for word in ["eliminar", "borrar"]):
+                return self._delete_specific_transaction(transaction_id, user_id, db)
+            elif action == "edit" or any(word in original_message.lower() for word in ["editar", "cambiar"]):
+                new_amount = analysis.get("new_amount")
+                new_description = analysis.get("new_description")
+                return self._edit_specific_transaction(transaction_id, user_id, db, new_amount, new_description)
+        
         if action == "list_recent":
             return self._show_recent_transactions(transactions, user_id)
             
@@ -172,6 +188,28 @@ class TransactionManagerAgent:
         
         else:
             return self._show_recent_transactions(transactions, user_id)
+    
+    def _extract_transaction_number(self, message: str) -> Optional[int]:
+        """Extract transaction number from message like 'eliminar gasto 2' or 'cambiar 3'."""
+        import re
+        
+        # Patterns to match numbers referring to transactions
+        patterns = [
+            r"(?:gasto|transacción|transaccion)\s+(\d+)",  # "gasto 2", "transacción 3"
+            r"(?:eliminar|borrar|editar|cambiar)\s+(?:gasto\s+)?(\d+)",  # "eliminar 2", "eliminar gasto 2"
+            r"(?:el\s+)?(\d+)(?:\s*$)",  # Just a number at the end
+            r"\b(\d+)\b"  # Any single digit in the message
+        ]
+        
+        for pattern in patterns:
+            match = re.search(pattern, message.lower())
+            if match:
+                try:
+                    return int(match.group(1))
+                except (ValueError, IndexError):
+                    continue
+        
+        return None
     
     def _format_transactions_for_ai(self, transactions: List) -> str:
         """Format transactions for AI processing."""
@@ -263,9 +301,21 @@ class TransactionManagerAgent:
     def _delete_specific_transaction(self, transaction_id: str, user_id: str, db: Session) -> Dict[str, Any]:
         """Delete a specific transaction."""
         try:
+            print(f"🗑️ Attempting to delete transaction: {transaction_id} for user: {user_id}")
+            
             # Verify ownership
             transaction = TransactionService.get_transaction(db, transaction_id)
-            if not transaction or str(transaction.user_id) != user_id:
+            print(f"🔍 Found transaction: {transaction is not None}")
+            
+            if not transaction:
+                print(f"❌ Transaction not found: {transaction_id}")
+                return {
+                    "success": False,
+                    "message": "❌ No se encontró esa transacción."
+                }
+                
+            if str(transaction.user_id) != user_id:
+                print(f"❌ User {user_id} doesn't own transaction owned by {transaction.user_id}")
                 return {
                     "success": False,
                     "message": "❌ No tienes permisos para eliminar esa transacción."
