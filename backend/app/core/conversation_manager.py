@@ -59,6 +59,11 @@ class ConversationManager:
                 "crear presupuesto", "nuevo presupuesto", "presupuesto para",
                 "límite de", "budget", "presupuesto de"
             ],
+            "create_organization": [
+                "crear familia", "crear empresa", "crear equipo", "nueva familia", 
+                "nueva empresa", "nuevo equipo", "agregar familia", "agregar empresa",
+                "crear organizacion", "crear organización"
+            ],
             "add_expense": [
                 "gasté", "gaste", "pagué", "pague", "compré", "compre",
                 "gasto de", "agregar gasto", "anotar gasto"
@@ -69,6 +74,9 @@ class ConversationManager:
             ],
             "help": [
                 "ayuda", "help", "qué puedo hacer", "comandos", "no entiendo"
+            ],
+            "accept_invitation": [
+                "acepto", "aceptar", "quiero unirme", "sí quiero"
             ]
         }
         
@@ -88,6 +96,8 @@ class ConversationManager:
             intent["extracted_data"] = self._extract_budget_data(message)
         elif intent["type"] == "add_expense":
             intent["extracted_data"] = self._extract_expense_data(message)
+        elif intent["type"] == "create_organization":
+            intent["extracted_data"] = self._extract_organization_data(message)
         
         # Check if this could be a continuation of current flow
         if context.current_flow != "none" and intent["confidence"] < 0.8:
@@ -102,11 +112,17 @@ class ConversationManager:
         if intent["type"] == "create_budget":
             return self._start_budget_creation(intent, message, user_id, db, context)
         
+        elif intent["type"] == "create_organization":
+            return self._handle_organization_creation(intent, message, user_id, db, context)
+        
         elif intent["type"] == "add_expense":
             return self._start_expense_addition(intent, message, user_id, db, context)
         
         elif intent["type"] == "view_report":
             return self._generate_report(message, user_id, db)
+        
+        elif intent["type"] == "accept_invitation":
+            return self._handle_accept_invitation(user_id, db)
         
         elif intent["type"] == "help":
             return self._show_help()
@@ -415,6 +431,39 @@ class ConversationManager:
         
         return data
     
+    def _extract_organization_data(self, message: str) -> Dict[str, Any]:
+        """Extract organization data from message"""
+        data = {}
+        
+        # Extract organization name (after action words)
+        import re
+        
+        # Remove action patterns
+        clean_message = message
+        action_patterns = [
+            r"crear\s+(familia|empresa|equipo|organizacion|organización)\s*",
+            r"nueva?\s+(familia|empresa|equipo|organizacion|organización)\s*", 
+            r"agregar\s+(familia|empresa|equipo|organizacion|organización)\s*"
+        ]
+        
+        for pattern in action_patterns:
+            match = re.search(pattern, clean_message, re.IGNORECASE)
+            if match:
+                # Get organization type
+                org_type = match.group(1).lower()
+                data["organization_type"] = org_type
+                
+                # Remove the matched pattern to get the name
+                clean_message = re.sub(pattern, "", clean_message, flags=re.IGNORECASE)
+                break
+        
+        # Extract name (remaining text)
+        org_name = clean_message.strip()
+        if len(org_name) > 0:
+            data["organization_name"] = org_name
+        
+        return data
+    
     def _extract_amount(self, message: str) -> Optional[float]:
         """Extract amount from message"""
         import re
@@ -540,6 +589,20 @@ class ConversationManager:
         currency_symbol = "₡" if user and user.currency == "CRC" else "$"
         
         return report_agent.generate_report(message, user_id, db, currency_symbol)
+    
+    def _handle_organization_creation(self, intent: Dict, message: str, user_id: str, db: Session, context: ConversationContext) -> Dict[str, Any]:
+        """Handle organization creation"""
+        from app.agents.organization_agent import OrganizationAgent
+        
+        org_agent = OrganizationAgent()
+        return org_agent.process_organization_command(message, user_id, db)
+    
+    def _handle_accept_invitation(self, user_id: str, db: Session) -> Dict[str, Any]:
+        """Handle invitation acceptance"""
+        from app.agents.organization_agent import OrganizationAgent
+        
+        org_agent = OrganizationAgent()
+        return org_agent._handle_accept_invitation_natural(user_id, db)
     
     def _show_help(self) -> Dict[str, Any]:
         """Show helpful commands"""
