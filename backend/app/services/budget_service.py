@@ -105,14 +105,26 @@ class BudgetService:
             )
         ).all()
 
+        print(f"🔍 DEBUG: Found {len(budgets)} budgets for category '{category}'")
+        
         for budget in budgets:
+            print(f"🔍 DEBUG: Checking budget {budget.id} ({budget.category}) for new transaction of {transaction_amount}")
+            
             # Calcular nuevo gasto total
             current_spent = self._calculate_spent_amount(budget)
             new_spent = current_spent + transaction_amount
             new_percentage = (new_spent / budget.amount * 100) if budget.amount > 0 else 0
 
+            print(f"   Current spent: {current_spent}")
+            print(f"   New transaction: {transaction_amount}")
+            print(f"   Total new spent: {new_spent}")
+            print(f"   Budget limit: {budget.amount}")
+            print(f"   New percentage: {new_percentage}%")
+
             # Verificar si se superó el umbral de alerta
             if new_percentage >= budget.alert_percentage:
+                print(f"   ⚠️ Alert threshold ({budget.alert_percentage}%) exceeded!")
+                
                 # Verificar si ya se envió alerta para este porcentaje
                 existing_alert = self.db.query(BudgetAlert).filter(
                     and_(
@@ -122,10 +134,20 @@ class BudgetService:
                 ).first()
 
                 if not existing_alert:
+                    print(f"   📤 Sending new alert")
                     self._create_budget_alert(budget, new_spent, new_percentage)
+                else:
+                    print(f"   🔇 Alert already sent for this threshold")
 
     def _calculate_spent_amount(self, budget: Budget) -> Decimal:
         """Calcular monto gastado en un presupuesto"""
+        
+        # Debug: Let's see what we're querying
+        print(f"🔍 DEBUG: Calculating spent for budget {budget.id}")
+        print(f"   Category: {budget.category}")
+        print(f"   User: {budget.user_id}")
+        print(f"   Period: {budget.start_date} to {budget.end_date}")
+        
         query = self.db.query(func.sum(Transaction.amount)).filter(
             and_(
                 Transaction.user_id == budget.user_id,
@@ -137,11 +159,30 @@ class BudgetService:
 
         # Filtrar por categoría si no es presupuesto general
         if budget.category.lower() not in ["general", "todos"]:
-            # Use case-insensitive and flexible category matching
-            query = query.filter(Transaction.category.ilike(f"%{budget.category}%"))
+            # Use exact category matching first, then flexible if needed
+            query = query.filter(Transaction.category == budget.category)
+
+        # Debug: Show matching transactions
+        debug_query = self.db.query(Transaction).filter(
+            and_(
+                Transaction.user_id == budget.user_id,
+                Transaction.type == TransactionType.expense,
+                Transaction.date >= budget.start_date,
+                Transaction.date <= budget.end_date,
+                Transaction.category == budget.category if budget.category.lower() not in ["general", "todos"] else True
+            )
+        )
+        
+        matching_transactions = debug_query.all()
+        print(f"   Matching transactions: {len(matching_transactions)}")
+        for tx in matching_transactions:
+            print(f"   - {tx.amount} in {tx.category} on {tx.date} ({tx.description})")
 
         result = query.scalar()
-        return result if result else Decimal("0.00")
+        calculated_amount = result if result else Decimal("0.00")
+        print(f"   Total calculated: {calculated_amount}")
+        
+        return calculated_amount
 
     def _create_budget_alert(self, budget: Budget, spent_amount: Decimal, percentage_spent: Decimal):
         """Crear alerta de presupuesto y enviar por WhatsApp"""
