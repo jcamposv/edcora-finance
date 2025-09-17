@@ -13,6 +13,17 @@ class TransactionService:
         db.add(db_transaction)
         db.commit()
         db.refresh(db_transaction)
+        
+        # Verificar alertas de presupuesto para gastos
+        if db_transaction.type == TransactionType.expense:
+            from app.services.budget_service import BudgetService
+            budget_service = BudgetService(db)
+            budget_service.check_budget_alerts(
+                user_id=db_transaction.user_id,
+                transaction_amount=db_transaction.amount,
+                category=db_transaction.category
+            )
+        
         return db_transaction
 
     @staticmethod
