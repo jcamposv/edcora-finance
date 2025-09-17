@@ -17,6 +17,8 @@ class User(Base):
     # Existing relationships
     transactions = relationship("Transaction", back_populates="user")
     reports = relationship("Report", back_populates="user")
+    budgets = relationship("Budget", back_populates="user")
+    reminders = relationship("Reminder", back_populates="user")
     
     # Organization relationships
     owned_organizations = relationship("Organization", back_populates="owner")

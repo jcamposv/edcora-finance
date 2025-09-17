@@ -129,6 +129,7 @@ class MasterRouterAgent:
                    - "create_transaction": gastos/ingresos ("gasté", "ingreso", "4000 en")
                    - "generate_report": "resumen", "cuánto", "balance", "reporte", "gastos del mes", "mis gastos", "total gastos"
                    - "manage_transactions": "eliminar gasto", "borrar gasto", "editar gasto", "cambiar gasto", "últimos gastos", "transacciones recientes"
+                   - "manage_budgets": "crear presupuesto", "presupuesto para", "límite de gasto", "budget", "alertas de gasto", "presupuesto mensual"
                    - "privacy_request": "privacidad", "datos", "derechos", "seguridad", "eliminar cuenta"
                    - "help_request": "cómo", "ayuda", "no entiendo", "comandos", "funciones", "qué puedo hacer"
                 
@@ -143,6 +144,13 @@ class MasterRouterAgent:
                    - organization_name: nombre de la organización
                    - person_to_invite: persona a invitar (solo si no hay número)
                    - phone_number: número de teléfono si se detecta
+                   
+                   Para presupuestos:
+                   - budget_name: nombre del presupuesto
+                   - budget_amount: límite del presupuesto
+                   - budget_category: categoría específica o "general"
+                   - budget_period: "weekly", "monthly", "yearly"
+                   - alert_percentage: porcentaje para alertas (por defecto 80)
                    
                    DETECCIÓN DE TELÉFONOS:
                    - "+50686956438" → phone_number: "+50686956438"
@@ -177,6 +185,13 @@ class MasterRouterAgent:
                    - "editar gasto" = manage_transactions
                    - "cambiar último gasto" = manage_transactions
                    - "mis últimos gastos" = manage_transactions
+                   
+                   GESTIÓN DE PRESUPUESTOS:
+                   - "crear presupuesto de ₡100000 para comida" = manage_budgets
+                   - "presupuesto mensual de 200000" = manage_budgets
+                   - "límite de ₡50000 en entretenimiento" = manage_budgets
+                   - "budget de $500 para gastos" = manage_budgets
+                   - "alertas al 75% del presupuesto" = manage_budgets
                 
                 RESPONDE EN JSON:
                 {{
@@ -189,7 +204,12 @@ class MasterRouterAgent:
                         "transaction_type": "expense/income/null",
                         "organization_name": "nombre_org_o_null",
                         "person_to_invite": "persona_o_null",
-                        "phone_number": "número_o_null"
+                        "phone_number": "número_o_null",
+                        "budget_name": "nombre_presupuesto_o_null",
+                        "budget_amount": "monto_presupuesto_o_null",
+                        "budget_category": "categoría_presupuesto_o_null",
+                        "budget_period": "periodo_presupuesto_o_null",
+                        "alert_percentage": "porcentaje_alerta_o_null"
                     }},
                     "reasoning": "explicación_breve_de_la_decisión"
                 }}
@@ -260,6 +280,9 @@ class MasterRouterAgent:
         
         elif action_type == "manage_transactions":
             return self._handle_transaction_management(original_message, user_id, db)
+        
+        elif action_type == "manage_budgets":
+            return self._handle_budget_management(parameters, original_message, user_id, db)
         
         elif action_type == "privacy_request":
             return self._handle_privacy_request(original_message, user_id, db)
@@ -434,6 +457,88 @@ class MasterRouterAgent:
         
         return result
     
+    def _handle_budget_management(self, parameters: Dict, message: str, user_id: str, db: Session) -> Dict[str, Any]:
+        """Handle budget creation and management."""
+        print(f"💰 Handling budget management: {message}")
+        
+        budget_name = parameters.get("budget_name")
+        budget_amount = parameters.get("budget_amount") 
+        budget_category = parameters.get("budget_category", "General")
+        budget_period = parameters.get("budget_period", "monthly")
+        alert_percentage = parameters.get("alert_percentage", 80.0)
+        
+        if not budget_amount:
+            return {
+                "success": False,
+                "message": "No pude identificar el monto del presupuesto. Intenta: 'crear presupuesto de ₡100000 para comida'",
+                "action": "budget_parse_error"
+            }
+        
+        try:
+            from app.services.budget_service import BudgetService
+            from app.services.user_service import UserService
+            from app.core.schemas import BudgetCreate
+            from app.models.budget import BudgetPeriod, BudgetStatus
+            from datetime import datetime, timedelta
+            import calendar
+            
+            user = UserService.get_user(db, user_id)
+            
+            # Calculate period dates
+            start_date = datetime.now()
+            if budget_period == "weekly":
+                end_date = start_date + timedelta(days=7)
+                period_enum = BudgetPeriod.weekly
+            elif budget_period == "yearly":
+                end_date = start_date.replace(year=start_date.year + 1)
+                period_enum = BudgetPeriod.yearly
+            else:  # monthly (default)
+                # Get last day of current month
+                last_day = calendar.monthrange(start_date.year, start_date.month)[1]
+                end_date = start_date.replace(day=last_day)
+                period_enum = BudgetPeriod.monthly
+            
+            # Auto-generate name if not provided
+            if not budget_name:
+                period_text = {"weekly": "Semanal", "monthly": "Mensual", "yearly": "Anual"}[budget_period]
+                budget_name = f"Presupuesto {period_text} - {budget_category}"
+            
+            budget_data = BudgetCreate(
+                user_id=user_id,
+                organization_id=None,  # Personal budget for now
+                name=budget_name,
+                category=budget_category,
+                amount=float(budget_amount),
+                period=period_enum,
+                start_date=start_date,
+                end_date=end_date,
+                status=BudgetStatus.active,
+                alert_percentage=float(alert_percentage),
+                auto_renew=False
+            )
+            
+            budget_service = BudgetService(db)
+            budget = budget_service.create_budget(budget_data)
+            
+            # Format response
+            currency_symbol = "₡" if user and user.currency == "CRC" else "$"
+            period_text = {"weekly": "semanal", "monthly": "mensual", "yearly": "anual"}[budget_period]
+            
+            return {
+                "success": True,
+                "message": f"✅ Presupuesto creado: '{budget_name}' - {currency_symbol}{budget_amount:,.0f} {period_text}\n📊 Categoría: {budget_category}\n🚨 Alerta al {alert_percentage}%",
+                "action": "budget_created",
+                "budget_id": str(budget.id)
+            }
+            
+        except Exception as e:
+            print(f"Error creating budget: {e}")
+            return {
+                "success": False,
+                "message": f"Error al crear el presupuesto: {str(e)}",
+                "action": "budget_error"
+            }
+    
     def _handle_privacy_request(self, message: str, user_id: str, db: Session) -> Dict[str, Any]:
         """Route to privacy agent."""
         from app.agents.privacy_agent import PrivacyAgent
@@ -514,6 +619,35 @@ class MasterRouterAgent:
         # Transaction management requests
         elif any(word in message_lower for word in ["eliminar gasto", "borrar gasto", "editar gasto", "cambiar gasto", "últimos gastos", "transacciones recientes", "eliminar último", "borrar último", "modificar gasto"]):
             return self._handle_transaction_management(message, user_id, db)
+        
+        # Budget management requests
+        elif any(phrase in message_lower for phrase in ["crear presupuesto", "presupuesto para", "límite de gasto", "budget", "presupuesto mensual", "presupuesto semanal", "presupuesto anual"]):
+            # Try to extract amount for fallback
+            import re
+            amount_match = re.search(r"(\d+(?:\.\d+)?)", message)
+            if amount_match:
+                amount = float(amount_match.group(1))
+                # Extract category if possible
+                category = "General"
+                if " para " in message_lower:
+                    parts = message_lower.split(" para ")
+                    if len(parts) > 1:
+                        category = parts[1].strip().title()
+                
+                # Extract period
+                period = "monthly"
+                if "semanal" in message_lower or "weekly" in message_lower:
+                    period = "weekly"
+                elif "anual" in message_lower or "yearly" in message_lower:
+                    period = "yearly"
+                
+                return self._handle_budget_management({
+                    "budget_amount": amount,
+                    "budget_category": category,
+                    "budget_period": period,
+                    "budget_name": None,
+                    "alert_percentage": 80.0
+                }, message, user_id, db)
         
         # Report requests
         elif any(word in message_lower for word in ["resumen", "reporte", "balance", "cuánto", "cuanto", "mis gastos", "total gastos", "gastos del mes", "como voy", "cómo voy"]):
