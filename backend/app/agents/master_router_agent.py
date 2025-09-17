@@ -121,15 +121,17 @@ class MasterRouterAgent:
                 ANALIZA EL MENSAJE Y DETERMINA:
                 
                 1. TIPO DE ACCIÓN:
+                   ⚠️ **IMPORTANTE**: "presupuesto" SIN "familia/empresa/equipo" = manage_budgets
+                   
                    - "accept_invitation": "acepto", "sí quiero unirme" (NO ES TRANSACCIÓN)
-                   - "create_organization": "crear familia", "nueva empresa", "agregar familia", "agregar empresa"
+                   - "create_organization": "crear familia", "nueva empresa", "agregar familia", "agregar empresa" (DEBE tener familia/empresa/equipo)
                    - "invite_member": "invitar", "agregar persona" (con nombre de persona)
                    - "list_members": "miembros", "quién está"
                    - "leave_organization": "salir", "abandonar"
                    - "create_transaction": gastos/ingresos ("gasté", "ingreso", "4000 en")
                    - "generate_report": "resumen", "cuánto", "balance", "reporte", "gastos del mes", "mis gastos", "total gastos"
                    - "manage_transactions": "eliminar gasto", "borrar gasto", "editar gasto", "cambiar gasto", "últimos gastos", "transacciones recientes"
-                   - "manage_budgets": "crear presupuesto", "presupuesto para", "límite de gasto", "budget", "alertas de gasto", "presupuesto mensual"
+                   - "manage_budgets": "crear presupuesto", "presupuesto para", "límite de gasto", "budget", "alertas de gasto", "presupuesto mensual" (CUALQUIER mensaje con "presupuesto" que NO tenga "familia/empresa/equipo")
                    - "privacy_request": "privacidad", "datos", "derechos", "seguridad", "eliminar cuenta"
                    - "help_request": "cómo", "ayuda", "no entiendo", "comandos", "funciones", "qué puedo hacer"
                 
@@ -164,12 +166,18 @@ class MasterRouterAgent:
                    - "agregar familia Campos Carranza" = create_organization con nombre "Campos Carranza"
                    - "crear empresa MiEmpresa" = create_organization con nombre "MiEmpresa"
                    
-                   PRESUPUESTOS VS ORGANIZACIONES:
+                   ⚠️ PRESUPUESTOS VS ORGANIZACIONES - REGLAS CRÍTICAS:
+                   - "crear presupuesto" = manage_budgets (NO create_organization)
                    - "crear presupuesto comida" = manage_budgets (NO create_organization)
                    - "presupuesto para casa" = manage_budgets (NO create_organization)  
                    - "presupuesto mensual" = manage_budgets (NO create_organization)
+                   - "budget de $500" = manage_budgets (NO create_organization)
+                   
+                   SOLO create_organization SI:
                    - "crear familia presupuesto" = create_organization con nombre "presupuesto"
-                   - Si contiene "presupuesto" pero NO "familia/empresa/equipo" = manage_budgets
+                   - "crear empresa presupuestos" = create_organization con nombre "presupuestos"
+                   
+                   REGLA: Si mensaje contiene "presupuesto" pero NO contiene "familia/empresa/equipo/organización" = SIEMPRE manage_budgets
                    
                    INVITACIONES CON NÚMEROS:
                    - "Invita a +50686956438" = invite_member con phone_number "+50686956438"
