@@ -9,9 +9,31 @@ class CategorizerAgent:
             self.has_openai = get_openai_config()
             
             self.agent = Agent(
-                role="Expense Categorizer",
-                goal="Categorize financial transactions into appropriate categories",
-                backstory="You are an expert at categorizing expenses and income based on transaction descriptions. You understand Costa Rican context and common spending patterns.",
+                role="Experto Categorizador Financiero Costarricense",
+                goal="Categorizar transacciones financieras con precisión perfecta entendiendo el contexto cultural y económico de Costa Rica",
+                backstory="""Eres un experto en categorización financiera especializado en Costa Rica y Latinoamérica.
+
+ENTIENDES PERFECTAMENTE:
+• Contexto costarricense: "gasolina" = Transporte, "soda" = Alimentación, "pulpería" = Alimentación
+• Marcas locales: Walmart, AutoMercado, Kolbi, ICE, AyA, CNFL
+• Servicios típicos: recibo de luz, agua, cable, internet
+• Transporte: Uber, taxi, gasolina, parqueo
+• Entretenimiento: cine, bar, streaming (Netflix, Spotify)
+
+CATEGORÍAS PRECISAS:
+GASTOS: Alimentación, Transporte, Entretenimiento, Salud, Educación, Servicios, Ropa, Hogar, Gasolina, General
+INGRESOS: Salario, Freelance, Inversiones, Otros Ingresos
+
+EJEMPLOS REALES:
+- "gasolina" → Gasolina
+- "almuerzo" → Alimentación  
+- "supermercado" → Alimentación
+- "uber" → Transporte
+- "netflix" → Entretenimiento
+- "recibo luz" → Servicios
+- "doctor" → Salud
+
+Siempre devuelves UNA sola categoría exacta.""",
                 verbose=True,
                 allow_delegation=False
             )
@@ -27,17 +49,18 @@ class CategorizerAgent:
                 allow_delegation=False
             )
         
-        # Predefined categories
+        # Predefined categories (enhanced for Costa Rica)
         self.expense_categories = {
-            "Alimentación": ["comida", "restaurant", "supermercado", "almuerzo", "desayuno", "cena", "groceries", "food"],
-            "Transporte": ["uber", "taxi", "gasolina", "bus", "transporte", "combustible", "parking"],
-            "Entretenimiento": ["cine", "bar", "fiesta", "diversión", "entretenimiento", "netflix", "spotify"],
-            "Salud": ["doctor", "medicina", "farmacia", "hospital", "salud", "médico"],
-            "Educación": ["libros", "curso", "universidad", "educación", "estudio"],
-            "Servicios": ["electricidad", "agua", "internet", "teléfono", "cable", "streaming"],
-            "Ropa": ["ropa", "zapatos", "vestido", "camisa", "pantalón"],
-            "Hogar": ["casa", "hogar", "muebles", "decoración", "limpieza"],
-            "Otros": []  # fallback category
+            "Alimentación": ["comida", "restaurant", "supermercado", "almuerzo", "desayuno", "cena", "groceries", "food", "soda", "pulpería", "walmart", "automercado", "mas x menos"],
+            "Gasolina": ["gasolina", "combustible", "diesel", "gas", "estación"],
+            "Transporte": ["uber", "taxi", "bus", "transporte", "parking", "parqueo", "peaje", "viaje"],
+            "Entretenimiento": ["cine", "bar", "fiesta", "diversión", "entretenimiento", "netflix", "spotify", "amazon prime", "disney"],
+            "Salud": ["doctor", "medicina", "farmacia", "hospital", "salud", "médico", "ccss", "consulta", "laboratorio"],
+            "Educación": ["libros", "curso", "universidad", "educación", "estudio", "escuela", "colegio"],
+            "Servicios": ["electricidad", "agua", "internet", "teléfono", "cable", "streaming", "ice", "kolbi", "cnfl", "aya", "recibo", "luz"],
+            "Ropa": ["ropa", "zapatos", "vestido", "camisa", "pantalón", "tienda"],
+            "Hogar": ["casa", "hogar", "muebles", "decoración", "limpieza", "ferretería", "epa"],
+            "General": []  # fallback category
         }
         
         self.income_categories = {
@@ -54,30 +77,41 @@ class CategorizerAgent:
         
         task = Task(
             description=f"""
-            Categorize this {transaction_type} transaction based on its description:
-            "{description}"
+            Categoriza esta transacción de {transaction_type} basada en su descripción:
+            DESCRIPCIÓN: "{description}"
             
-            For expenses, choose from these categories:
-            - Alimentación (food, restaurants, groceries)
-            - Transporte (transportation, fuel, parking)
-            - Entretenimiento (entertainment, movies, streaming)
-            - Salud (health, medicine, doctor visits)
-            - Educación (education, books, courses)
-            - Servicios (utilities, internet, phone)
-            - Ropa (clothing, shoes)
-            - Hogar (home, furniture, cleaning)
-            - Otros (other expenses)
+            CATEGORÍAS DISPONIBLES:
             
-            For income, choose from these categories:
-            - Salario (salary, regular pay)
-            - Freelance (freelance work, projects)
-            - Inversiones (investments, dividends)
-            - Otros Ingresos (other income)
+            Para GASTOS (expense):
+            • Alimentación: comida, restaurantes, supermercado, almuerzo, soda, pulpería
+            • Gasolina: gasolina, combustible, diesel, estación de servicio
+            • Transporte: Uber, taxi, bus, parqueo, peaje (NO gasolina)
+            • Entretenimiento: cine, bar, Netflix, Spotify, diversión
+            • Salud: doctor, medicina, farmacia, hospital, CCSS
+            • Educación: libros, cursos, universidad, escuela
+            • Servicios: electricidad, agua, internet, teléfono, ICE, Kolbi, CNFL, AyA
+            • Ropa: ropa, zapatos, vestidos, tienda de ropa
+            • Hogar: casa, muebles, decoración, ferretería, EPA
+            • General: cualquier otro gasto
             
-            Return only the category name in Spanish.
+            Para INGRESOS (income):
+            • Salario: salario, sueldo, pago regular
+            • Freelance: freelance, proyectos, consultoría
+            • Inversiones: dividendos, intereses, inversiones
+            • Otros Ingresos: cualquier otro ingreso
+            
+            EJEMPLOS ESPECÍFICOS:
+            - "gasolina" → Gasolina
+            - "uber" → Transporte  
+            - "almuerzo" → Alimentación
+            - "netflix" → Entretenimiento
+            - "recibo luz" → Servicios
+            - "doctor" → Salud
+            
+            RESPONDE SOLO con el nombre exacto de la categoría en español.
             """,
             agent=self.agent,
-            expected_output="Single category name in Spanish"
+            expected_output="Nombre exacto de la categoría en español"
         )
         
         crew = Crew(
@@ -117,7 +151,7 @@ class CategorizerAgent:
         
         if transaction_type == "expense":
             categories = self.expense_categories
-            default = "Otros"
+            default = "General"
         else:
             categories = self.income_categories
             default = "Otros Ingresos"

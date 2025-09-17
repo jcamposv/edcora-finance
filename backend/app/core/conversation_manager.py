@@ -2,6 +2,8 @@ from typing import Dict, Any, Optional, List
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from sqlalchemy.orm import Session
+from app.core.llm_config import get_openai_config
+from crewai import Agent, Task, Crew
 import json
 import uuid
 
@@ -21,6 +23,31 @@ class ConversationManager:
     def __init__(self):
         self.active_sessions: Dict[str, ConversationContext] = {}
         self.session_timeout = timedelta(minutes=10)  # 10 min timeout
+        
+        # Initialize OpenAI agent for intelligent parsing
+        try:
+            self.has_openai = get_openai_config()
+            if self.has_openai:
+                self.intelligent_agent = Agent(
+                    role="Asistente Financiero Inteligente",
+                    goal="Entender completamente mensajes en español sobre finanzas y extraer información precisa sobre gastos, ingresos y contexto organizacional.",
+                    backstory="""Eres un experto en procesamiento de lenguaje natural en español, especializado en transacciones financieras.
+                    
+                    Entiendes patrones como:
+                    - "Gasto familia gasolina 40000" = gasto de 40000 en gasolina para la familia
+                    - "Compré almuerzo 5000" = gasto de 5000 en almuerzo (personal)
+                    - "Pago empresa 25000" = gasto de 25000 para la empresa
+                    
+                    Siempre respondes en JSON con la información extraída.""",
+                    verbose=True,
+                    allow_delegation=False
+                )
+            else:
+                self.intelligent_agent = None
+        except Exception as e:
+            print(f"Warning: Could not initialize intelligent agent: {e}")
+            self.has_openai = False
+            self.intelligent_agent = None
     
     def process_message(self, message: str, user_id: str, db: Session) -> Dict[str, Any]:
         """Process message with conversation context"""
@@ -34,7 +61,7 @@ class ConversationManager:
         self._cleanup_old_sessions()
         
         # Determine if this is a new intent or continuation
-        message_intent = self._analyze_message_intent(message, context)
+        message_intent = self._analyze_message_intent(message, context, db)
         
         # Route based on intent and context
         if context.current_flow == "none":
@@ -42,8 +69,108 @@ class ConversationManager:
         else:
             return self._handle_ongoing_conversation(message_intent, message, user_id, db, context)
     
-    def _analyze_message_intent(self, message: str, context: ConversationContext) -> Dict[str, Any]:
-        """Analyze message intent with context awareness"""
+    def _analyze_message_intent(self, message: str, context: ConversationContext, db: Session = None) -> Dict[str, Any]:
+        """Analyze message intent with AI or fallback to regex"""
+        
+        # Get user organizations for context if we have db session
+        user_organizations = []
+        if db:
+            try:
+                from app.services.organization_service import OrganizationService
+                user_organizations = OrganizationService.get_user_organizations(db, context.user_id)
+            except:
+                user_organizations = []
+        
+        if self.has_openai and self.intelligent_agent:
+            return self._ai_analyze_intent(message, context, user_organizations)
+        else:
+            return self._regex_analyze_intent(message, context)
+    
+    def _ai_analyze_intent(self, message: str, context: ConversationContext, user_organizations: List = None) -> Dict[str, Any]:
+        """Use AI to analyze message intent and extract data intelligently"""
+        
+        org_context = ""
+        if user_organizations:
+            org_names = [org.name for org in user_organizations]
+            org_context = f"El usuario pertenece a estas organizaciones: {', '.join(org_names)}"
+        
+        task = Task(
+            description=f"""
+            Analiza este mensaje en español y extrae la información:
+            MENSAJE: "{message}"
+            CONTEXTO: {org_context}
+            
+            Determina:
+            1. TIPO DE ACCIÓN (debe ser UNO de estos):
+               - add_expense: cualquier gasto, compra, pago (ej: "gasto", "gasté", "compré", "pago")
+               - create_budget: crear presupuesto
+               - create_organization: crear familia/empresa/equipo
+               - view_report: ver resumen/reporte/balance
+               - accept_invitation: acepta invitación
+               - help: pide ayuda
+               - unknown: no está claro
+            
+            2. DATOS EXTRAÍDOS:
+               - amount: número del monto (solo el número, sin símbolos)
+               - description: descripción del gasto (sin el monto)
+               - organization_context: nombre de organización mencionada o null
+               - category: categoría inferida (Gasolina, Comida, etc.)
+            
+            EJEMPLOS:
+            - "Gasto familia gasolina 40000" → add_expense, amount: 40000, description: "gasolina", organization_context: "familia"
+            - "Compré almuerzo 5000" → add_expense, amount: 5000, description: "almuerzo", organization_context: null
+            - "Gasto 40000" → add_expense, amount: 40000, description: null, organization_context: null
+            - "Crear presupuesto comida" → create_budget, category: "Comida"
+            
+            RESPONDE SOLO JSON:
+            {{
+                "type": "tipo_de_accion",
+                "confidence": 0.9,
+                "is_new_flow": true,
+                "extracted_data": {{
+                    "amount": numero_o_null,
+                    "description": "texto_o_null",
+                    "organization_context": "nombre_org_o_null",
+                    "category": "categoria_o_null"
+                }}
+            }}
+            """,
+            agent=self.intelligent_agent,
+            expected_output="JSON con análisis completo del mensaje"
+        )
+        
+        try:
+            crew = Crew(agents=[self.intelligent_agent], tasks=[task])
+            result = str(crew.kickoff()).strip()
+            
+            # Parse AI response
+            import re
+            json_match = re.search(r'\{.*\}', result, re.DOTALL)
+            if json_match:
+                json_str = json_match.group(0)
+                intent = json.loads(json_str)
+                
+                # Ensure required fields exist
+                if "type" not in intent:
+                    intent["type"] = "unknown"
+                if "confidence" not in intent:
+                    intent["confidence"] = 0.5
+                if "is_new_flow" not in intent:
+                    intent["is_new_flow"] = True
+                if "extracted_data" not in intent:
+                    intent["extracted_data"] = {}
+                
+                return intent
+            else:
+                print(f"❌ AI response not JSON: {result}")
+                return self._regex_analyze_intent(message, context)
+                
+        except Exception as e:
+            print(f"❌ AI intent analysis failed: {e}")
+            return self._regex_analyze_intent(message, context)
+    
+    def _regex_analyze_intent(self, message: str, context: ConversationContext) -> Dict[str, Any]:
+        """Fallback regex analysis when AI is not available"""
         message_lower = message.lower().strip()
         
         intent = {
@@ -66,7 +193,8 @@ class ConversationManager:
             ],
             "add_expense": [
                 "gasté", "gaste", "pagué", "pague", "compré", "compre",
-                "gasto de", "agregar gasto", "anotar gasto"
+                "gasto de", "agregar gasto", "anotar gasto", "gasto", 
+                "pago", "compra", "costo", "costó", "invertí", "invirtí"
             ],
             "view_report": [
                 "resumen", "reporte", "balance", "cuánto", "total",
@@ -168,34 +296,104 @@ class ConversationManager:
             }
     
     def _start_expense_addition(self, intent: Dict, message: str, user_id: str, db: Session, context: ConversationContext) -> Dict[str, Any]:
-        """Start expense addition flow"""
+        """Start expense addition flow with organization context"""
         data = intent["extracted_data"]
+        
+        # Get user organizations
+        from app.services.organization_service import OrganizationService
+        user_organizations = OrganizationService.get_user_organizations(db, user_id)
         
         # Check what we have
         has_amount = data.get("amount") is not None
         has_description = data.get("description") is not None
+        organization_context = data.get("organization_context")
         
-        if has_amount and has_description:
-            # We have everything, create the expense
+        # Determine target organization
+        target_organization = None
+        if organization_context and user_organizations:
+            # Try to match mentioned organization
+            for org in user_organizations:
+                if organization_context.lower() in org.name.lower():
+                    target_organization = org
+                    break
+        
+        # Check if we need to ask for organization
+        needs_org_clarification = False
+        if len(user_organizations) > 1:  # User has multiple organizations
+            if not target_organization:  # No organization matched or mentioned
+                needs_org_clarification = True
+        
+        # If we have everything and organization is clear, create the expense
+        if has_amount and has_description and not needs_org_clarification:
+            # Add organization info to data
+            if target_organization:
+                data["organization_id"] = str(target_organization.id)
+                data["organization_name"] = target_organization.name
             return self._create_expense_directly(data, user_id, db, context)
         
         # Start guided flow
         context.current_flow = "adding_expense"
         context.flow_data = data
+        context.flow_data["user_organizations"] = [{"id": str(org.id), "name": org.name, "type": org.type.value} for org in user_organizations]
         
-        if has_amount:
+        # If we need organization clarification first
+        if needs_org_clarification and has_amount and has_description:
+            return self._ask_for_organization(data, user_organizations)
+        
+        # If missing amount
+        if not has_amount:
+            return {
+                "success": False,
+                "message": "💸 ¡Entendido! Quieres anotar un gasto\n\n💰 ¿Cuánto gastaste?\n📝 Ejemplos: ₡5000, 5000, cinco mil\n\n💡 O puedes decir: 'Gasté ₡5000 en almuerzo'",
+                "action": "expense_need_amount"
+            }
+        
+        # If missing description
+        if not has_description:
             return {
                 "success": False,
                 "message": f"💸 Perfecto! Gasto de ₡{data['amount']:,.0f}\n\n📝 ¿En qué lo gastaste?\n\nEjemplos:\n• Almuerzo\n• Gasolina\n• Supermercado\n\nDescribe el gasto:",
                 "action": "expense_need_description"
             }
         
-        else:
-            return {
-                "success": False,
-                "message": "💸 ¡Entendido! Quieres anotar un gasto\n\n💰 ¿Cuánto gastaste?\n📝 Ejemplos: ₡5000, 5000, cinco mil\n\n💡 O puedes decir: 'Gasté ₡5000 en almuerzo'",
-                "action": "expense_need_amount"
-            }
+        # Should not reach here, but just in case
+        return {
+            "success": False,
+            "message": "💸 ¡Entendido! Quieres anotar un gasto\n\n💰 ¿Cuánto gastaste?\n📝 Ejemplos: ₡5000, 5000, cinco mil",
+            "action": "expense_need_amount"
+        }
+    
+    def _ask_for_organization(self, data: Dict, user_organizations: List) -> Dict[str, Any]:
+        """Ask user to choose organization for the expense"""
+        
+        amount_text = f"₡{data['amount']:,.0f}" if data.get('amount') else "tu gasto"
+        description_text = f" en {data['description']}" if data.get('description') else ""
+        
+        org_options = []
+        for i, org in enumerate(user_organizations, 1):
+            emoji = "👨‍👩‍👧‍👦" if org.type.value == "family" else "🏢"
+            org_options.append(f"{i}. {emoji} {org.name}")
+        
+        org_list = "\n".join(org_options)
+        personal_option = f"{len(user_organizations) + 1}. 👤 Personal"
+        
+        message = f"""💸 **Gasto de {amount_text}{description_text}**
+
+🏷️ **¿Dónde quieres registrarlo?**
+
+{org_list}
+{personal_option}
+
+📝 Responde con el número o nombre:
+• "1" o "{user_organizations[0].name}"
+• "Personal"
+"""
+        
+        return {
+            "success": False,
+            "message": message,
+            "action": "expense_need_organization"
+        }
     
     def _handle_ongoing_conversation(self, intent: Dict, message: str, user_id: str, db: Session, context: ConversationContext) -> Dict[str, Any]:
         """Handle continuation of ongoing conversation"""
@@ -261,6 +459,31 @@ class ConversationManager:
     def _continue_expense_addition(self, message: str, user_id: str, db: Session, context: ConversationContext) -> Dict[str, Any]:
         """Continue expense addition with user input"""
         data = context.flow_data
+        user_organizations = data.get("user_organizations", [])
+        
+        # Handle organization selection if needed
+        if data.get("amount") and data.get("description") and not data.get("organization_id"):
+            if len(user_organizations) > 1:  # User has multiple organizations
+                org_selection = self._parse_organization_selection(message, user_organizations)
+                if org_selection:
+                    data["organization_id"] = org_selection.get("organization_id")
+                    data["organization_name"] = org_selection.get("organization_name")
+                    return self._create_expense_directly(data, user_id, db, context)
+                else:
+                    # Invalid selection, ask again
+                    org_options = []
+                    for i, org in enumerate(user_organizations, 1):
+                        emoji = "👨‍👩‍👧‍👦" if org["type"] == "family" else "🏢"
+                        org_options.append(f"{i}. {emoji} {org['name']}")
+                    
+                    org_list = "\n".join(org_options)
+                    personal_option = f"{len(user_organizations) + 1}. 👤 Personal"
+                    
+                    return {
+                        "success": False,
+                        "message": f"🤔 No entendí tu selección\n\n🏷️ **¿Dónde registrar el gasto?**\n\n{org_list}\n{personal_option}\n\n📝 Responde con el número:",
+                        "action": "expense_need_organization"
+                    }
         
         # Extract missing information
         if not data.get("amount"):
@@ -285,9 +508,12 @@ class ConversationManager:
                     "action": "expense_need_description"
                 }
         
-        # If we have everything, create expense
+        # Check if we need organization selection
         if data.get("amount") and data.get("description"):
-            return self._create_expense_directly(data, user_id, db, context)
+            if len(user_organizations) > 1 and not data.get("organization_id"):
+                return self._ask_for_organization(data, [{"id": org["id"], "name": org["name"], "type": type("", (), {"value": org["type"]})() } for org in user_organizations])
+            else:
+                return self._create_expense_directly(data, user_id, db, context)
         
         # Still missing something
         return {
@@ -295,6 +521,44 @@ class ConversationManager:
             "message": "🤔 Necesito más información para anotar tu gasto",
             "action": "expense_incomplete"
         }
+    
+    def _parse_organization_selection(self, message: str, user_organizations: List) -> Optional[Dict]:
+        """Parse user's organization selection response"""
+        message_lower = message.lower().strip()
+        
+        # Try numeric selection first
+        try:
+            selection_num = int(message_lower)
+            if 1 <= selection_num <= len(user_organizations):
+                org = user_organizations[selection_num - 1]
+                return {
+                    "organization_id": org["id"],
+                    "organization_name": org["name"]
+                }
+            elif selection_num == len(user_organizations) + 1:
+                # Personal selection
+                return {
+                    "organization_id": None,
+                    "organization_name": "Personal"
+                }
+        except ValueError:
+            pass
+        
+        # Try name matching
+        if "personal" in message_lower:
+            return {
+                "organization_id": None,
+                "organization_name": "Personal"
+            }
+        
+        for org in user_organizations:
+            if org["name"].lower() in message_lower:
+                return {
+                    "organization_id": org["id"],
+                    "organization_name": org["name"]
+                }
+        
+        return None
     
     def _create_budget_directly(self, data: Dict, user_id: str, db: Session, context: ConversationContext) -> Dict[str, Any]:
         """Create budget with all required data"""
@@ -364,9 +628,13 @@ class ConversationManager:
             # Determine category from description
             category = self._smart_categorize(data['description'])
             
+            # Get organization ID if specified
+            organization_id = data.get('organization_id')
+            organization_name = data.get('organization_name', 'Personal')
+            
             transaction_data = TransactionCreate(
                 user_id=user_id,
-                organization_id=None,
+                organization_id=organization_id,
                 amount=float(data['amount']),
                 type=TransactionType.expense,
                 category=category,
@@ -384,15 +652,21 @@ class ConversationManager:
             
             currency = "₡" if user and user.currency == "CRC" else "$"
             
+            # Create context-aware confirmation message
+            context_text = ""
+            if organization_name and organization_name != "Personal":
+                context_text = f" ({organization_name})"
+            
             return {
                 "success": True,
-                "message": f"✅ **Gasto anotado**\n\n💸 {currency}{data['amount']:,.0f} en {data['description']}\n📊 Categoría: {category}\n\n💡 Puedes ver tu resumen con: 'resumen'",
+                "message": f"✅ **Gasto anotado{context_text}**\n\n💸 {currency}{data['amount']:,.0f} en {data['description']}\n📊 Categoría: {category}\n\n💡 Puedes ver tu resumen con: 'resumen'",
                 "action": "expense_created"
             }
             
         except Exception as e:
             context.current_flow = "none"
             context.flow_data = {}
+            currency = "₡"  # Default fallback
             return {
                 "success": False,
                 "message": f"❌ Ups! No pude anotar tu gasto.\n\n🔄 Intenta: 'Gasté {currency}{data['amount']:,.0f} en {data['description']}'",
@@ -468,22 +742,32 @@ class ConversationManager:
         """Extract amount from message"""
         import re
         
-        # Remove currency symbols
-        clean_message = message.replace('₡', '').replace('$', '').replace(',', '')
-        
-        # Find numbers
+        # Find numbers with various patterns
         patterns = [
-            r"(\d+(?:\.\d+)?)",
-            r"(\d+(?:,\d+)*)"
+            r"₡\s*(\d{1,3}(?:,?\d{3})*(?:\.\d{2})?)",  # ₡1000 or ₡1,000.50
+            r"\$\s*(\d{1,3}(?:,?\d{3})*(?:\.\d{2})?)",  # $1000 or $1,000.50
+            r"(\d{1,3}(?:,?\d{3})*(?:\.\d{2})?)\s*(?:colones?|₡)",  # 1000 colones
+            r"(\d{1,3}(?:,?\d{3})*(?:\.\d{2})?)\s*(?:dollars?|dólares?|\$)",  # 1000 dollars
+            r"(\d{4,})",  # Just numbers with 4+ digits (likely amounts)
+            r"(\d{1,3}(?:,\d{3})+)",  # Numbers with comma separators
+            r"(\d+(?:\.\d+)?)"  # Any number as last resort
         ]
         
         for pattern in patterns:
-            matches = re.findall(pattern, clean_message)
+            matches = re.findall(pattern, message)
             if matches:
                 try:
-                    amount = float(matches[0].replace(',', ''))
-                    if amount > 0:
-                        return amount
+                    # Take the largest number found (most likely to be the amount)
+                    amounts = []
+                    for match in matches:
+                        clean_amount = match.replace(',', '')
+                        amount = float(clean_amount)
+                        if amount > 0:
+                            amounts.append(amount)
+                    
+                    if amounts:
+                        # Return the largest amount found
+                        return max(amounts)
                 except:
                     continue
         
@@ -525,23 +809,42 @@ class ConversationManager:
         clean_message = message
         action_patterns = [
             r"gasté\s+", r"gaste\s+", r"pagué\s+", r"pague\s+", 
-            r"compré\s+", r"compre\s+", r"gasto\s+", r"agregar\s+gasto\s+"
+            r"compré\s+", r"compre\s+", r"gasto\s+", r"agregar\s+gasto\s+",
+            r"pago\s+", r"compra\s+", r"costo\s+", r"costó\s+", r"invertí\s+", r"invirtí\s+"
         ]
         
         for pattern in action_patterns:
             clean_message = re.sub(pattern, "", clean_message, count=1, flags=re.IGNORECASE)
         
-        # Remove amount patterns more precisely
-        clean_message = re.sub(r"₡?\s*\d+(?:[,\s]\d+)*(?:\.\d+)?", "", clean_message)
+        # For patterns like "Gasto familia gasolina 40000", extract the middle part
+        # Split by spaces and remove numbers
+        words = clean_message.split()
+        description_words = []
         
-        # Remove prepositions that might remain
-        clean_message = re.sub(r"^\s*(en|de|para)\s+", "", clean_message, flags=re.IGNORECASE)
+        for word in words:
+            # Skip if it's purely numeric (likely amount)
+            if re.match(r'^\d+(\.\d+)?$', word):
+                continue
+            # Skip if it's currency-related
+            if word.lower() in ['₡', '$', 'colones', 'colón', 'dollars', 'dólares']:
+                continue
+            # Skip if it's a pure number with currency symbol
+            if re.match(r'^[₡\$]\d+', word):
+                continue
+                
+            description_words.append(word)
+        
+        # Join the remaining words
+        description = ' '.join(description_words).strip()
+        
+        # Remove prepositions that might remain at the start
+        description = re.sub(r"^\s*(en|de|para|del|de\s+la|de\s+los|de\s+las)\s+", "", description, flags=re.IGNORECASE)
         
         # Clean up spaces and punctuation
-        description = clean_message.strip().strip(",").strip()
+        description = description.strip().strip(",").strip()
         
         # If description is reasonable length, return it
-        if len(description) > 2 and len(description) < 100:
+        if len(description) > 1 and len(description) < 100:
             return description
         
         return None
