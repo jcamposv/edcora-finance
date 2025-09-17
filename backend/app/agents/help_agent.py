@@ -43,6 +43,12 @@ class HelpAgent:
                     - 'balance del mes', 'gastos de esta semana'
                     - 'reporte familiar', 'gastos de empresa'
                     
+                    PRESUPUESTOS:
+                    - 'crear presupuesto de ₡100000 para comida'
+                    - 'presupuesto mensual de ₡200000'
+                    - 'límite semanal de ₡50000 para entretenimiento'
+                    - Sistema envía alertas automáticas al 80% del límite
+                    
                     Respondes en español de forma clara y práctica, con ejemplos específicos.""",
                     verbose=True,
                     allow_delegation=False
@@ -273,6 +279,11 @@ class HelpAgent:
 • "Eliminar último gasto" - Borrar gasto
 • "Cambiar último gasto a ₡8000" - Editar monto
 • "Editar gasto de almuerzo" - Modificar gasto
+💰 **PRESUPUESTOS:**
+• "Crear presupuesto de ₡100000 para comida" - Nuevo presupuesto
+• "Presupuesto mensual de ₡200000" - Límite mensual
+• "Budget de $500 para entretenimiento" - En categoría específica
+• "Límite semanal de ₡50000" - Presupuesto semanal
 
 🏢 **ORGANIZACIONES:**
 • "Crear familia Mi Hogar" - Nueva organización

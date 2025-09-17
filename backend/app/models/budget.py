@@ -20,6 +20,7 @@ class Budget(Base):
     
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     user_id = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=False)
+    organization_id = Column(UUID(as_uuid=True), ForeignKey("organizations.id"), nullable=True)
     
     # Configuración del presupuesto
     name = Column(String, nullable=False)  # "Alimentación Octubre", "Gastos Mensuales"
@@ -39,6 +40,7 @@ class Budget(Base):
     
     # Relaciones
     user = relationship("User", back_populates="budgets")
+    organization = relationship("Organization", back_populates="budgets")
     alerts = relationship("BudgetAlert", back_populates="budget", cascade="all, delete-orphan")
 
 class BudgetAlert(Base):
