@@ -53,14 +53,13 @@ class MasterRouterAgent:
     
     def route_and_process(self, message: str, user_id: str, db: Session) -> Dict[str, Any]:
         """
-        Master method that analyzes ANY message and processes it intelligently.
-        This replaces the fragmented routing in the WhatsApp router.
+        Master method that uses conversation manager for natural UX.
         """
+        from app.core.conversation_manager import ConversationManager
         
-        if self.has_openai and self.agent:
-            return self._ai_route_and_process(message, user_id, db)
-        else:
-            return self._fallback_route_and_process(message, user_id, db)
+        # Use conversation manager for natural flow
+        conversation_manager = ConversationManager()
+        return conversation_manager.process_message(message, user_id, db)
     
     def _ai_route_and_process(self, message: str, user_id: str, db: Session) -> Dict[str, Any]:
         """Use AI to understand intent and process accordingly."""
