@@ -39,9 +39,9 @@ class IntentClassifier:
                 action_type="manage_budgets",
                 keywords=["crear presupuesto", "presupuesto para", "presupuesto mensual", 
                          "presupuesto semanal", "presupuesto anual", "límite de gasto", 
-                         "budget", "alertas de gasto"],
+                         "budget", "alertas de gasto", "presupuesto", "presupuestos"],
                 priority=100,  # Very high priority
-                requires_amount=True,
+                requires_amount=False,  # Allow without amount for prompting
                 exclude_keywords=["familia", "empresa", "equipo", "organización"]
             ),
             

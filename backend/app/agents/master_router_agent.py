@@ -164,6 +164,13 @@ class MasterRouterAgent:
                    - "agregar familia Campos Carranza" = create_organization con nombre "Campos Carranza"
                    - "crear empresa MiEmpresa" = create_organization con nombre "MiEmpresa"
                    
+                   PRESUPUESTOS VS ORGANIZACIONES:
+                   - "crear presupuesto comida" = manage_budgets (NO create_organization)
+                   - "presupuesto para casa" = manage_budgets (NO create_organization)  
+                   - "presupuesto mensual" = manage_budgets (NO create_organization)
+                   - "crear familia presupuesto" = create_organization con nombre "presupuesto"
+                   - Si contiene "presupuesto" pero NO "familia/empresa/equipo" = manage_budgets
+                   
                    INVITACIONES CON NÚMEROS:
                    - "Invita a +50686956438" = invite_member con phone_number "+50686956438"
                    - "agregar +506..." = invite_member con phone_number detectado
@@ -462,16 +469,38 @@ class MasterRouterAgent:
         print(f"💰 Handling budget management: {message}")
         
         budget_name = parameters.get("budget_name")
-        budget_amount = parameters.get("budget_amount") 
+        budget_amount = parameters.get("budget_amount") or parameters.get("amount")
         budget_category = parameters.get("budget_category", "General")
         budget_period = parameters.get("budget_period", "monthly")
         alert_percentage = parameters.get("alert_percentage", 80.0)
         
+        # If no amount detected, prompt user
         if not budget_amount:
+            # Try to extract category from the message for better prompting
+            if budget_category == "General":
+                # Try to extract category from message
+                message_lower = message.lower()
+                if "comida" in message_lower or "comidas" in message_lower:
+                    budget_category = "Comida"
+                elif "gasolina" in message_lower:
+                    budget_category = "Gasolina"
+                elif "entretenimiento" in message_lower:
+                    budget_category = "Entretenimiento"
+                else:
+                    # Try to extract after "presupuesto"
+                    words = message.split()
+                    for i, word in enumerate(words):
+                        if "presupuesto" in word.lower() and i + 1 < len(words):
+                            next_word = words[i + 1]
+                            if next_word.lower() not in ["para", "de", "mensual", "semanal", "anual"]:
+                                budget_category = next_word.title()
+                                break
+            
             return {
                 "success": False,
-                "message": "No pude identificar el monto del presupuesto. Intenta: 'crear presupuesto de ₡100000 para comida'",
-                "action": "budget_parse_error"
+                "message": f"💰 ¿Cuál es el límite de tu presupuesto para {budget_category}?\n\nEjemplo: 'Presupuesto de ₡100000 para {budget_category.lower()}'",
+                "action": "budget_amount_needed",
+                "suggested_category": budget_category
             }
         
         try:
