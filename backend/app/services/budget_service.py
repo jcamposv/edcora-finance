@@ -1,5 +1,5 @@
 from sqlalchemy.orm import Session
-from sqlalchemy import and_, func, extract
+from sqlalchemy import and_, func, extract, or_
 from typing import List, Optional
 from datetime import datetime, timedelta
 from decimal import Decimal
@@ -96,7 +96,12 @@ class BudgetService:
                 Budget.status == BudgetStatus.active,
                 Budget.start_date <= datetime.now(),
                 Budget.end_date >= datetime.now(),
-                Budget.category.in_([category, "general"])  # Presupuesto específico o general
+                # Flexible category matching
+                or_(
+                    Budget.category.ilike(f"%{category}%"),
+                    Budget.category.ilike("general"),
+                    Budget.category.ilike("todos")
+                )
             )
         ).all()
 
@@ -131,8 +136,9 @@ class BudgetService:
         )
 
         # Filtrar por categoría si no es presupuesto general
-        if budget.category != "general":
-            query = query.filter(Transaction.category == budget.category)
+        if budget.category.lower() not in ["general", "todos"]:
+            # Use case-insensitive and flexible category matching
+            query = query.filter(Transaction.category.ilike(f"%{budget.category}%"))
 
         result = query.scalar()
         return result if result else Decimal("0.00")
@@ -148,25 +154,33 @@ class BudgetService:
         )
         self.db.add(alert)
 
+        # Obtener información del usuario para moneda
+        from app.models.user import User
+        user = self.db.query(User).filter(User.id == budget.user_id).first()
+        currency_symbol = "₡" if user and user.currency == "CRC" else "$"
+
         # Preparar mensaje para WhatsApp
         if percentage_spent >= 100:
             emoji = "🚨"
             status = "LÍMITE SUPERADO"
             over_amount = spent_amount - budget.amount
-            message = f"{emoji} {status}: Has gastado ${spent_amount:,.0f} de ${budget.amount:,.0f} en {budget.name}\n"
-            message += f"Has excedido ${over_amount:,.0f} tu presupuesto"
+            message = f"{emoji} **{status}**\n\n"
+            message += f"💸 Gastado: {currency_symbol}{spent_amount:,.0f}\n"
+            message += f"💰 Límite: {currency_symbol}{budget.amount:,.0f}\n"
+            message += f"❌ Excedido: {currency_symbol}{over_amount:,.0f}\n\n"
+            message += f"📊 Presupuesto: {budget.category}"
         else:
             emoji = "⚠️"
-            status = "ALERTA"
+            status = "ALERTA DE PRESUPUESTO"
             remaining = budget.amount - spent_amount
-            message = f"{emoji} {status}: Has gastado ${spent_amount:,.0f} de ${budget.amount:,.0f} en {budget.name} ({percentage_spent:.0f}%)\n"
-            message += f"Te quedan ${remaining:,.0f} para el resto del período"
+            message = f"{emoji} **{status}**\n\n"
+            message += f"💸 Gastado: {currency_symbol}{spent_amount:,.0f} ({percentage_spent:.0f}%)\n"
+            message += f"💰 Límite: {currency_symbol}{budget.amount:,.0f}\n"
+            message += f"✅ Disponible: {currency_symbol}{remaining:,.0f}\n\n"
+            message += f"📊 Presupuesto: {budget.category}"
 
         # Enviar mensaje por WhatsApp
         try:
-            # Obtener número de teléfono del usuario
-            from app.models.user import User
-            user = self.db.query(User).filter(User.id == budget.user_id).first()
             if user:
                 self.whatsapp_service.send_message(user.phone_number, message)
                 alert.message_sent = True

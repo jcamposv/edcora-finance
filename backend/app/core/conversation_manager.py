@@ -470,22 +470,29 @@ class ConversationManager:
     
     def _extract_description(self, message: str) -> Optional[str]:
         """Extract description from expense message"""
-        message_lower = message.lower()
-        
-        # Remove action words
-        clean_message = message
-        action_words = ["gasté", "gaste", "pagué", "pague", "compré", "compre", "gasto", "agregar gasto"]
-        
-        for word in action_words:
-            clean_message = clean_message.replace(word, "", 1)
-        
-        # Remove amount patterns
         import re
+        
+        # Remove action words more carefully
+        clean_message = message
+        action_patterns = [
+            r"gasté\s+", r"gaste\s+", r"pagué\s+", r"pague\s+", 
+            r"compré\s+", r"compre\s+", r"gasto\s+", r"agregar\s+gasto\s+"
+        ]
+        
+        for pattern in action_patterns:
+            clean_message = re.sub(pattern, "", clean_message, count=1, flags=re.IGNORECASE)
+        
+        # Remove amount patterns more precisely
         clean_message = re.sub(r"₡?\s*\d+(?:[,\s]\d+)*(?:\.\d+)?", "", clean_message)
         
-        # Clean up
-        description = clean_message.strip()
-        if len(description) > 2:
+        # Remove prepositions that might remain
+        clean_message = re.sub(r"^\s*(en|de|para)\s+", "", clean_message, flags=re.IGNORECASE)
+        
+        # Clean up spaces and punctuation
+        description = clean_message.strip().strip(",").strip()
+        
+        # If description is reasonable length, return it
+        if len(description) > 2 and len(description) < 100:
             return description
         
         return None
