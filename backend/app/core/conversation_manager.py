@@ -63,6 +63,14 @@ class ConversationManager:
         # Determine if this is a new intent or continuation
         message_intent = self._analyze_message_intent(message, context, db)
         
+        # CRITICAL: If we're in a conversation flow, prioritize continuing it
+        # Don't let new intent detection override ongoing conversations
+        if context.current_flow != "none":
+            # Force continuation unless it's a very clear new intent
+            if message_intent["confidence"] < 0.9 or message_intent["type"] in ["help", "unknown"]:
+                message_intent["is_new_flow"] = False
+                message_intent["type"] = "continuation"
+        
         # Route based on intent and context
         if context.current_flow == "none":
             return self._handle_new_conversation(message_intent, message, user_id, db, context)
@@ -524,7 +532,10 @@ class ConversationManager:
         if not data.get("description"):
             # Use the whole message as description if it's reasonable
             if len(message.strip()) > 2 and len(message.strip()) < 100:
-                data["description"] = message.strip()
+                # Clean the description to remove prepositions
+                description = message.strip()
+                description = description.replace("en ", "").replace("de ", "").replace("para ", "")
+                data["description"] = description.strip()
             else:
                 return {
                     "success": False,
@@ -615,17 +626,21 @@ class ConversationManager:
                 {org_context}
                 {personal_option}
                 
+                REGLAS CRÍTICAS:
+                1. "Personal" o "personal" SIEMPRE = cuenta personal (organizacion_id: null)
+                2. "14" = Personal (porque 14 es la última opción Personal)
+                3. Números 1-13 = organizaciones específicas
+                4. Nombres de organizaciones = buscar coincidencia
+                
                 EJEMPLOS DE RESPUESTAS:
-                - "Personal" → organizacion: null, nombre: "Personal"
-                - "personal" → organizacion: null, nombre: "Personal"
-                - "14" → organizacion: null, nombre: "Personal" (si 14 es Personal)
-                - "1" → organizacion: "{user_organizations[0]['id']}", nombre: "{user_organizations[0]['name']}"
+                - "Personal" → organizacion_id: null, organizacion_nombre: "Personal"
+                - "personal" → organizacion_id: null, organizacion_nombre: "Personal"  
+                - "14" → organizacion_id: null, organizacion_nombre: "Personal"
+                - "1" → organizacion_id: "{user_organizations[0]['id']}", organizacion_nombre: "{user_organizations[0]['name']}"
                 - "gymgo" → buscar organización que contenga "gymgo"
                 - "familia" → buscar organización que contenga "familia"
                 
-                Si menciona "personal" en cualquier forma → selección personal
-                Si menciona nombre de organización → buscar coincidencia
-                Si da número → mapear a la opción correspondiente
+                IMPORTANTE: "Personal" NO es una organización, es la cuenta personal del usuario.
                 
                 RESPONDE SOLO JSON:
                 {{
