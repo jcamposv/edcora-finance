@@ -552,118 +552,66 @@ class MasterRouterAgent:
         return help_agent.answer_question(message, user_id, db)
     
     def _fallback_route_and_process(self, message: str, user_id: str, db: Session) -> Dict[str, Any]:
-        """Fallback routing when AI is not available."""
-        message_lower = message.lower().strip()
+        """Smart fallback routing using intent classifier when AI is not available."""
+        from app.core.intent_classifier import IntentClassifier
         
-        # Accept invitation
-        if any(word in message_lower for word in ["acepto", "aceptar", "quiero unirme"]):
+        classifier = IntentClassifier()
+        intent_match = classifier.classify_intent(message)
+        
+        if not intent_match:
+            return {
+                "success": False,
+                "message": "No entendí tu mensaje. Escribe 'ayuda' para ver los comandos disponibles.",
+                "action": "unknown"
+            }
+        
+        print(f"🎯 Intent classified: {intent_match.action_type} (confidence: {intent_match.confidence:.2f}, priority: {intent_match.priority})")
+        print(f"📋 Parameters: {intent_match.parameters}")
+        
+        # Route to appropriate handler based on classified intent
+        return self._execute_classified_action(intent_match, message, user_id, db)
+    
+    def _execute_classified_action(self, intent_match, original_message: str, user_id: str, db: Session) -> Dict[str, Any]:
+        """Execute action based on classified intent"""
+        action_type = intent_match.action_type
+        parameters = intent_match.parameters
+        
+        if action_type == "accept_invitation":
             return self._handle_accept_invitation(user_id, db)
         
-        # Invitations with phone numbers
-        elif any(word in message_lower for word in ["invitar", "invita", "agregar"]) and ("+" in message or any(char.isdigit() for char in message)):
-            # Direct phone number invitation - extract number
-            import re
-            phone_patterns = [
-                r"(\+506\s?\d{4}\s?\d{4})",  # +506 1234 5678
-                r"(\+506\d{8})",            # +50612345678
-                r"(506\s?\d{4}\s?\d{4})",   # 506 1234 5678
-                r"(506\d{8})",              # 50612345678
-                r"(\d{4}[-\s]?\d{4})",      # 1234-5678 or 1234 5678
-                r"(\+\d{1,3}\d{8,})"       # Generic international
-            ]
-            
-            phone_number = None
-            for pattern in phone_patterns:
-                match = re.search(pattern, message)
-                if match:
-                    number = match.group(1)
-                    # Normalize the number
-                    if not number.startswith('+'):
-                        if number.startswith('506'):
-                            phone_number = '+' + number
-                        else:
-                            # Assume Costa Rica if no country code
-                            phone_number = '+506' + number.replace('-', '').replace(' ', '')
-                    else:
-                        phone_number = number.replace(' ', '').replace('-', '')
-                    break
-            
-            if phone_number:
-                print(f"📞 Fallback detected phone: {phone_number}")
-                from app.agents.organization_agent import OrganizationAgent
-                org_agent = OrganizationAgent()
-                return org_agent._handle_invite_member_natural(phone_number, user_id, db)
+        elif action_type == "create_transaction":
+            return self._handle_smart_transaction(parameters, user_id, db)
         
-        # Create organization - Let the org agent handle name extraction intelligently
-        elif any(phrase in message_lower for phrase in ["crear familia", "crear empresa", "nueva familia", "nueva empresa", "agregar familia", "agregar empresa", "crear organizacion"]):
-            # Pass the full message to let OrganizationAgent extract the name intelligently
-            from app.agents.organization_agent import OrganizationAgent
-            org_agent = OrganizationAgent()
-            # Use the organization agent's own intelligence to parse the message
-            return org_agent.process_organization_command(message, user_id, db)
+        elif action_type == "create_organization":
+            return self._handle_organization_action("create", parameters, user_id, db, original_message)
         
-        # Transaction patterns
-        elif any(phrase in message_lower for phrase in ["gasté", "gaste", "pagué", "pague", "compré", "compre"]) or any(char.isdigit() for char in message):
-            # Try to extract amount
-            import re
-            amount_match = re.search(r"(\d+(?:\.\d+)?)", message)
-            if amount_match:
-                amount = float(amount_match.group(1))
-                return self._handle_smart_transaction({
-                    "amount": amount,
-                    "description": message,
-                    "organization_context": None,
-                    "transaction_type": "expense"
-                }, user_id, db)
+        elif action_type == "invite_member":
+            return self._handle_organization_action("invite", parameters, user_id, db, original_message)
         
-        # Transaction management requests
-        elif any(word in message_lower for word in ["eliminar gasto", "borrar gasto", "editar gasto", "cambiar gasto", "últimos gastos", "transacciones recientes", "eliminar último", "borrar último", "modificar gasto"]):
-            return self._handle_transaction_management(message, user_id, db)
+        elif action_type == "list_members":
+            return self._handle_organization_action("list", parameters, user_id, db, original_message)
         
-        # Budget management requests
-        elif any(phrase in message_lower for phrase in ["crear presupuesto", "presupuesto para", "límite de gasto", "budget", "presupuesto mensual", "presupuesto semanal", "presupuesto anual"]):
-            # Try to extract amount for fallback
-            import re
-            amount_match = re.search(r"(\d+(?:\.\d+)?)", message)
-            if amount_match:
-                amount = float(amount_match.group(1))
-                # Extract category if possible
-                category = "General"
-                if " para " in message_lower:
-                    parts = message_lower.split(" para ")
-                    if len(parts) > 1:
-                        category = parts[1].strip().title()
-                
-                # Extract period
-                period = "monthly"
-                if "semanal" in message_lower or "weekly" in message_lower:
-                    period = "weekly"
-                elif "anual" in message_lower or "yearly" in message_lower:
-                    period = "yearly"
-                
-                return self._handle_budget_management({
-                    "budget_amount": amount,
-                    "budget_category": category,
-                    "budget_period": period,
-                    "budget_name": None,
-                    "alert_percentage": 80.0
-                }, message, user_id, db)
+        elif action_type == "leave_organization":
+            return self._handle_organization_action("leave", parameters, user_id, db, original_message)
         
-        # Report requests
-        elif any(word in message_lower for word in ["resumen", "reporte", "balance", "cuánto", "cuanto", "mis gastos", "total gastos", "gastos del mes", "como voy", "cómo voy"]):
-            return self._handle_report_request(message, user_id, db)
+        elif action_type == "generate_report":
+            return self._handle_report_request(original_message, user_id, db)
         
-        # Privacy requests
-        elif any(word in message_lower for word in ["privacidad", "datos", "derechos", "seguridad", "eliminar cuenta", "privacy", "rights"]):
-            return self._handle_privacy_request(message, user_id, db)
+        elif action_type == "manage_transactions":
+            return self._handle_transaction_management(original_message, user_id, db)
         
-        # Help requests
-        elif any(word in message_lower for word in ["ayuda", "help", "cómo", "como", "comandos", "funciones", "qué puedo hacer"]):
-            return self._handle_help_request(message, user_id, db)
+        elif action_type == "manage_budgets":
+            return self._handle_budget_management(parameters, original_message, user_id, db)
         
-        # Default
-        return {
-            "success": False,
-            "message": "No entendí tu mensaje. Escribe 'ayuda' para ver los comandos disponibles.",
-            "action": "unknown"
-        }
+        elif action_type == "privacy_request":
+            return self._handle_privacy_request(original_message, user_id, db)
+        
+        elif action_type == "help_request":
+            return self._handle_help_request(original_message, user_id, db)
+        
+        else:
+            return {
+                "success": False,
+                "message": f"Acción '{action_type}' no implementada aún.",
+                "action": "not_implemented"
+            }
