@@ -59,6 +59,7 @@ class Organization(Base):
     members = relationship("OrganizationMember", back_populates="organization", cascade="all, delete-orphan")
     transactions = relationship("Transaction", back_populates="organization")
     invitations = relationship("OrganizationInvitation", back_populates="organization", cascade="all, delete-orphan")
+    budgets = relationship("Budget", back_populates="organization")
     
     # Self-referential relationship for hierarchy
     parent = relationship("Organization", remote_side=[id], back_populates="children")

@@ -2,7 +2,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
 
-from app.routers import users, transactions, whatsapp, stripe, reports
+from app.routers import users, transactions, whatsapp, stripe, reports, budgets
 from app.core.database import engine, Base
 from app.services.scheduler import SchedulerService
 
@@ -57,6 +57,7 @@ app.include_router(transactions.router)
 app.include_router(whatsapp.router)
 app.include_router(stripe.router)
 app.include_router(reports.router)
+app.include_router(budgets.router)
 
 @app.get("/")
 async def root():
