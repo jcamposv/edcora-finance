@@ -121,6 +121,7 @@ class ConversationManager:
             - "Gasto familia gasolina 40000" → add_expense, amount: 40000, description: "gasolina", organization_context: "familia"
             - "Compré almuerzo 5000" → add_expense, amount: 5000, description: "almuerzo", organization_context: null
             - "Gasto 40000" → add_expense, amount: 40000, description: null, organization_context: null
+            - "Gasto 5000 gasolina quiero ingresarlo a personal" → add_expense, amount: 5000, description: "gasolina", organization_context: "personal"
             - "Crear presupuesto comida" → create_budget, category: "Comida"
             - "En qué familias estoy" → list_organizations
             - "Cuáles organizaciones tengo" → list_organizations
@@ -322,18 +323,28 @@ class ConversationManager:
         
         # Determine target organization
         target_organization = None
-        if organization_context and user_organizations:
-            # Try to match mentioned organization
-            for org in user_organizations:
-                if organization_context.lower() in org.name.lower():
-                    target_organization = org
-                    break
-        
-        # Check if we need to ask for organization
         needs_org_clarification = False
-        if len(user_organizations) > 1:  # User has multiple organizations
-            if not target_organization:  # No organization matched or mentioned
-                needs_org_clarification = True
+        
+        if organization_context:
+            # Check if it's personal request
+            if organization_context.lower() in ["personal", "mío", "mio", "propio"]:
+                # User explicitly wants personal - no organization
+                data["organization_id"] = None
+                data["organization_name"] = "Personal"
+                # Skip organization clarification for personal requests
+                needs_org_clarification = False
+            elif user_organizations:
+                # Try to match mentioned organization
+                for org in user_organizations:
+                    if organization_context.lower() in org.name.lower():
+                        target_organization = org
+                        break
+        
+        # Check if we need to ask for organization (only if not already decided)
+        if not organization_context or (organization_context and not target_organization and organization_context.lower() not in ["personal", "mío", "mio", "propio"]):
+            if len(user_organizations) > 1:  # User has multiple organizations
+                if not target_organization:  # No organization matched or mentioned
+                    needs_org_clarification = True
         
         # If we have everything and organization is clear, create the expense
         if has_amount and has_description and not needs_org_clarification:
@@ -476,7 +487,8 @@ class ConversationManager:
         # Handle organization selection if needed
         if data.get("amount") and data.get("description") and not data.get("organization_id"):
             if len(user_organizations) > 1:  # User has multiple organizations
-                org_selection = self._parse_organization_selection(message, user_organizations)
+                # Try intelligent parsing first
+                org_selection = self._intelligent_organization_selection(message, user_organizations, user_id, db)
                 if org_selection:
                     data["organization_id"] = org_selection.get("organization_id")
                     data["organization_name"] = org_selection.get("organization_name")
@@ -571,6 +583,105 @@ class ConversationManager:
                 }
         
         return None
+    
+    def _intelligent_organization_selection(self, message: str, user_organizations: List, user_id: str, db: Session) -> Optional[Dict]:
+        """Use AI to intelligently parse organization selection"""
+        
+        if self.has_openai and self.intelligent_agent:
+            return self._ai_parse_organization_selection(message, user_organizations)
+        else:
+            return self._parse_organization_selection(message, user_organizations)
+    
+    def _ai_parse_organization_selection(self, message: str, user_organizations: List) -> Optional[Dict]:
+        """Use AI to parse organization selection with better understanding"""
+        
+        org_list = []
+        for i, org in enumerate(user_organizations, 1):
+            org_list.append(f"{i}. {org['name']}")
+        
+        org_context = "\n".join(org_list)
+        personal_option = f"{len(user_organizations) + 1}. Personal"
+        
+        try:
+            from crewai import Task, Crew
+            
+            task = Task(
+                description=f"""
+                El usuario está seleccionando dónde registrar un gasto. Analiza su respuesta:
+                
+                MENSAJE DEL USUARIO: "{message}"
+                
+                OPCIONES DISPONIBLES:
+                {org_context}
+                {personal_option}
+                
+                EJEMPLOS DE RESPUESTAS:
+                - "Personal" → organizacion: null, nombre: "Personal"
+                - "personal" → organizacion: null, nombre: "Personal"
+                - "14" → organizacion: null, nombre: "Personal" (si 14 es Personal)
+                - "1" → organizacion: "{user_organizations[0]['id']}", nombre: "{user_organizations[0]['name']}"
+                - "gymgo" → buscar organización que contenga "gymgo"
+                - "familia" → buscar organización que contenga "familia"
+                
+                Si menciona "personal" en cualquier forma → selección personal
+                Si menciona nombre de organización → buscar coincidencia
+                Si da número → mapear a la opción correspondiente
+                
+                RESPONDE SOLO JSON:
+                {{
+                    "organizacion_id": "id_de_organizacion_o_null",
+                    "organizacion_nombre": "nombre_exacto",
+                    "confianza": 0.9
+                }}
+                """,
+                agent=self.intelligent_agent,
+                expected_output="JSON con la selección de organización parseada"
+            )
+            
+            crew = Crew(agents=[self.intelligent_agent], tasks=[task])
+            result = str(crew.kickoff()).strip()
+            
+            # Parse AI response
+            import re
+            import json
+            json_match = re.search(r'\{.*\}', result, re.DOTALL)
+            if json_match:
+                json_str = json_match.group(0)
+                parsed = json.loads(json_str)
+                
+                org_id = parsed.get("organizacion_id")
+                org_name = parsed.get("organizacion_nombre", "Personal")
+                
+                # Validate the selection
+                if org_id is None or org_id == "null":
+                    return {
+                        "organization_id": None,
+                        "organization_name": "Personal"
+                    }
+                
+                # Find the organization
+                for org in user_organizations:
+                    if org["id"] == org_id:
+                        return {
+                            "organization_id": org_id,
+                            "organization_name": org["name"]
+                        }
+                
+                # If ID not found, try name matching
+                for org in user_organizations:
+                    if org_name.lower() in org["name"].lower():
+                        return {
+                            "organization_id": org["id"],
+                            "organization_name": org["name"]
+                        }
+                
+                return None
+            
+        except Exception as e:
+            print(f"AI organization selection failed: {e}")
+        
+        # Fallback to simple parsing
+        return self._parse_organization_selection(message, user_organizations)
     
     def _create_budget_directly(self, data: Dict, user_id: str, db: Session, context: ConversationContext) -> Dict[str, Any]:
         """Create budget with all required data"""
