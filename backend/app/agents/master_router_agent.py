@@ -306,11 +306,8 @@ class MasterRouterAgent:
             return self._handle_help_request(original_message, user_id, db)
         
         else:
-            return {
-                "success": False,
-                "message": f"No pude entender tu mensaje: '{original_message}'. ¿Podrías ser más específico?",
-                "action": "unknown"
-            }
+            # Handle ambiguous commands with disambiguation agent
+            return self._handle_ambiguous_command(original_message, user_id, db)
     
     def _handle_accept_invitation(self, user_id: str, db: Session) -> Dict[str, Any]:
         """Handle invitation acceptance."""
@@ -521,6 +518,10 @@ class MasterRouterAgent:
             
             user = UserService.get_user(db, user_id)
             
+            # Ensure we have a valid category
+            if not budget_category or budget_category == "General":
+                budget_category = "General"
+            
             # Calculate period dates
             start_date = datetime.now()
             if budget_period == "weekly":
@@ -544,7 +545,7 @@ class MasterRouterAgent:
                 user_id=user_id,
                 organization_id=None,  # Personal budget for now
                 name=budget_name,
-                category=budget_category,
+                category=str(budget_category),  # Ensure it's a string
                 amount=float(budget_amount),
                 period=period_enum,
                 start_date=start_date,
@@ -647,8 +648,17 @@ class MasterRouterAgent:
             return self._handle_help_request(original_message, user_id, db)
         
         else:
-            return {
-                "success": False,
-                "message": f"Acción '{action_type}' no implementada aún.",
-                "action": "not_implemented"
-            }
+            return self._handle_ambiguous_command(original_message, user_id, db)
+    
+    def _handle_ambiguous_command(self, message: str, user_id: str, db: Session) -> Dict[str, Any]:
+        """Handle ambiguous or unknown commands using disambiguation agent"""
+        from app.agents.disambiguation_agent import DisambiguationAgent
+        
+        disambiguation_agent = DisambiguationAgent()
+        
+        # Check for ambiguous "crear" commands
+        if "crear" in message.lower():
+            return disambiguation_agent.handle_ambiguous_create(message, user_id, db)
+        
+        # Handle other unknown commands
+        return disambiguation_agent._handle_unknown_command(message)

@@ -57,7 +57,7 @@ class IntentClassifier:
                 action_type="create_organization",
                 keywords=["crear familia", "crear empresa", "nueva familia", 
                          "nueva empresa", "agregar familia", "agregar empresa", 
-                         "crear organizacion", "crear equipo"],
+                         "crear organizacion", "crear equipo", "familia", "empresa"],
                 priority=80,
                 exclude_keywords=["presupuesto", "budget", "límite"]
             ),
