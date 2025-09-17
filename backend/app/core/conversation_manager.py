@@ -106,6 +106,7 @@ class ConversationManager:
                - create_budget: crear presupuesto
                - create_organization: crear familia/empresa/equipo
                - view_report: ver resumen/reporte/balance
+               - list_organizations: listar organizaciones (ej: "en qué familias estoy", "mis organizaciones", "cuáles familias", "donde estoy")
                - accept_invitation: acepta invitación
                - help: pide ayuda
                - unknown: no está claro
@@ -121,6 +122,9 @@ class ConversationManager:
             - "Compré almuerzo 5000" → add_expense, amount: 5000, description: "almuerzo", organization_context: null
             - "Gasto 40000" → add_expense, amount: 40000, description: null, organization_context: null
             - "Crear presupuesto comida" → create_budget, category: "Comida"
+            - "En qué familias estoy" → list_organizations
+            - "Cuáles organizaciones tengo" → list_organizations
+            - "Mis familias" → list_organizations
             
             RESPONDE SOLO JSON:
             {{
@@ -200,6 +204,11 @@ class ConversationManager:
                 "resumen", "reporte", "balance", "cuánto", "total",
                 "mis gastos", "gastos del mes"
             ],
+            "list_organizations": [
+                "qué familias", "que familias", "cuáles familias", "cuales familias",
+                "mis organizaciones", "mis familias", "donde estoy", "dónde estoy",
+                "en qué", "en que", "organizaciones tengo", "familias tengo"
+            ],
             "help": [
                 "ayuda", "help", "qué puedo hacer", "comandos", "no entiendo"
             ],
@@ -248,6 +257,9 @@ class ConversationManager:
         
         elif intent["type"] == "view_report":
             return self._generate_report(message, user_id, db)
+        
+        elif intent["type"] == "list_organizations":
+            return self._list_user_organizations(user_id, db)
         
         elif intent["type"] == "accept_invitation":
             return self._handle_accept_invitation(user_id, db)
@@ -900,6 +912,63 @@ class ConversationManager:
         org_agent = OrganizationAgent()
         return org_agent.process_organization_command(message, user_id, db)
     
+    def _list_user_organizations(self, user_id: str, db: Session) -> Dict[str, Any]:
+        """List user's organizations and memberships"""
+        try:
+            from app.services.organization_service import OrganizationService
+            from app.services.user_service import UserService
+            
+            # Get user's organizations
+            user_organizations = OrganizationService.get_user_organizations(db, user_id)
+            user = UserService.get_user(db, user_id)
+            
+            if not user_organizations:
+                return {
+                    "success": True,
+                    "message": "👤 **Solo tienes tu cuenta personal**\n\n💡 ¿Quieres crear una organización?\n• 'Crear familia Mi Hogar'\n• 'Crear empresa Mi Negocio'",
+                    "action": "no_organizations"
+                }
+            
+            # Build organization list
+            org_list = ["🏷️ **Tus organizaciones:**\n"]
+            
+            for i, org in enumerate(user_organizations, 1):
+                # Get emoji based on type
+                if org.type.value == "family":
+                    emoji = "👨‍👩‍👧‍👦"
+                elif org.type.value == "company":
+                    emoji = "🏢" 
+                elif org.type.value == "team":
+                    emoji = "👥"
+                else:
+                    emoji = "🏷️"
+                
+                # Get role
+                membership = OrganizationService.get_user_membership(db, user_id, str(org.id))
+                role_emoji = "👑" if membership.role.value == "owner" else "👤" if membership.role.value == "member" else "👀"
+                
+                org_list.append(f"{i}. {emoji} **{org.name}** {role_emoji}")
+            
+            org_list.append(f"\n👤 **Personal** (siempre disponible)")
+            org_list.append(f"\n💡 **Tip:** Menciona el nombre para gastos específicos:\n• 'Gasto {user_organizations[0].name.lower()} gasolina 40000'")
+            
+            message = "\n".join(org_list)
+            
+            return {
+                "success": True,
+                "message": message,
+                "action": "organizations_listed",
+                "organization_count": len(user_organizations)
+            }
+            
+        except Exception as e:
+            print(f"Error listing organizations: {e}")
+            return {
+                "success": False,
+                "message": "❌ No pude obtener tus organizaciones en este momento.",
+                "action": "list_error"
+            }
+    
     def _handle_accept_invitation(self, user_id: str, db: Session) -> Dict[str, Any]:
         """Handle invitation acceptance"""
         from app.agents.organization_agent import OrganizationAgent
@@ -920,6 +989,12 @@ class ConversationManager:
 💸 **GASTOS:**
 • "Gasté ₡5000" - Te pregunto en qué
 • "Gasté ₡5000 en almuerzo" - Directo
+• "Gasto familia gasolina 40000" - Con contexto
+
+🏷️ **ORGANIZACIONES:**
+• "En qué familias estoy" - Ver tus organizaciones
+• "Mis organizaciones" - Lista completa
+• "Crear familia Mi Hogar" - Nueva familia
 
 📈 **REPORTES:**
 • "Resumen" - Ver tus gastos
@@ -935,11 +1010,12 @@ class ConversationManager:
         """Handle unclear messages with helpful suggestions"""
         return {
             "success": False,
-            "message": f"🤔 No estoy seguro qué quieres hacer\n\n💡 **Puedes probar:**\n\n📊 'Crear presupuesto'\n💸 'Gasté ₡5000'\n📈 'Resumen'\n❓ 'Ayuda'\n\n¿Qué te gustaría hacer?",
+            "message": f"🤔 No estoy seguro qué quieres hacer\n\n💡 **Puedes probar:**\n\n📊 'Crear presupuesto'\n💸 'Gasté ₡5000'\n🏷️ 'En qué familias estoy'\n📈 'Resumen'\n❓ 'Ayuda'\n\n¿Qué te gustaría hacer?",
             "action": "unclear_message",
             "suggestions": [
                 "Crear presupuesto",
                 "Gasté ₡5000",
+                "En qué familias estoy",
                 "Resumen",
                 "Ayuda"
             ]
