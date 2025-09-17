@@ -112,12 +112,13 @@ class ConversationManager:
             1. TIPO DE ACCIÓN (debe ser UNO de estos):
                - add_expense: cualquier gasto, compra, pago (ej: "gasto", "gasté", "compré", "pago")
                - create_budget: crear presupuesto
-               - create_organization: crear familia/empresa/equipo
+               - create_organization: crear familia/empresa/equipo (NUNCA si solo dice "personal")
                - view_report: ver resumen/reporte/balance
                - list_organizations: listar organizaciones (ej: "en qué familias estoy", "mis organizaciones", "cuáles familias", "donde estoy")
+               - manage_transactions: gestionar/editar/eliminar gastos (ej: "gestionar gastos", "eliminar gasto", "mis últimos gastos")
                - accept_invitation: acepta invitación
                - help: pide ayuda
-               - unknown: no está claro
+               - unknown: no está claro o respuesta de selección (ej: solo "Personal", "1", "almuerzo")
             
             2. DATOS EXTRAÍDOS:
                - amount: número del monto (solo el número, sin símbolos)
@@ -130,10 +131,16 @@ class ConversationManager:
             - "Compré almuerzo 5000" → add_expense, amount: 5000, description: "almuerzo", organization_context: null
             - "Gasto 40000" → add_expense, amount: 40000, description: null, organization_context: null
             - "Gasto 5000 gasolina quiero ingresarlo a personal" → add_expense, amount: 5000, description: "gasolina", organization_context: "personal"
+            - "Personal" → unknown (respuesta de selección, no crear organización)
+            - "almuerzo" → unknown (respuesta de descripción)
+            - "1" → unknown (respuesta de selección numérica)
             - "Crear presupuesto comida" → create_budget, category: "Comida"
+            - "Crear familia Mi Hogar" → create_organization
             - "En qué familias estoy" → list_organizations
             - "Cuáles organizaciones tengo" → list_organizations
             - "Mis familias" → list_organizations
+            - "Gestionar gastos" → manage_transactions
+            - "Eliminar último gasto" → manage_transactions
             
             RESPONDE SOLO JSON:
             {{
@@ -218,6 +225,11 @@ class ConversationManager:
                 "mis organizaciones", "mis familias", "donde estoy", "dónde estoy",
                 "en qué", "en que", "organizaciones tengo", "familias tengo"
             ],
+            "manage_transactions": [
+                "gestionar gastos", "gestionar gasto", "editar gastos", "editar gasto",
+                "eliminar gastos", "eliminar gasto", "borrar gastos", "borrar gasto",
+                "mis últimos gastos", "últimos gastos", "cambiar gasto", "modificar gasto"
+            ],
             "help": [
                 "ayuda", "help", "qué puedo hacer", "comandos", "no entiendo"
             ],
@@ -269,6 +281,9 @@ class ConversationManager:
         
         elif intent["type"] == "list_organizations":
             return self._list_user_organizations(user_id, db)
+        
+        elif intent["type"] == "manage_transactions":
+            return self._handle_transaction_management(message, user_id, db)
         
         elif intent["type"] == "accept_invitation":
             return self._handle_accept_invitation(user_id, db)
@@ -349,10 +364,12 @@ class ConversationManager:
                         break
         
         # Check if we need to ask for organization (only if not already decided)
-        if not organization_context or (organization_context and not target_organization and organization_context.lower() not in ["personal", "mío", "mio", "propio"]):
-            if len(user_organizations) > 1:  # User has multiple organizations
-                if not target_organization:  # No organization matched or mentioned
-                    needs_org_clarification = True
+        if len(user_organizations) > 0:  # User has at least one organization
+            if not organization_context:  # No organization mentioned at all
+                needs_org_clarification = True
+            elif organization_context and not target_organization and organization_context.lower() not in ["personal", "mío", "mio", "propio"]:
+                # Organization mentioned but not found
+                needs_org_clarification = True
         
         # If we have everything and organization is clear, create the expense
         if has_amount and has_description and not needs_org_clarification:
@@ -1038,6 +1055,63 @@ class ConversationManager:
         org_agent = OrganizationAgent()
         return org_agent.process_organization_command(message, user_id, db)
     
+    def _handle_transaction_management(self, message: str, user_id: str, db: Session) -> Dict[str, Any]:
+        """Handle transaction management requests"""
+        try:
+            from app.services.transaction_service import TransactionService
+            from app.services.user_service import UserService
+            
+            # Get recent transactions for the user
+            transactions = TransactionService.get_user_transactions(db, user_id, limit=10)
+            user = UserService.get_user(db, user_id)
+            
+            if not transactions:
+                return {
+                    "success": True,
+                    "message": "📝 **No tienes gastos registrados**\n\n💡 Agrega tu primer gasto:\n• 'Gasté ₡5000 en almuerzo'",
+                    "action": "no_transactions"
+                }
+            
+            currency = "₡" if user and user.currency == "CRC" else "$"
+            
+            # Build transaction list
+            transaction_list = ["📝 **Tus últimos gastos:**\n"]
+            
+            for i, tx in enumerate(transactions[:5], 1):  # Show last 5
+                # Format amount
+                amount_text = f"{currency}{tx.amount:,.0f}"
+                
+                # Get organization context
+                org_text = ""
+                if tx.organization:
+                    org_text = f" ({tx.organization.name})"
+                elif not tx.organization_id:
+                    org_text = " (Personal)"
+                
+                transaction_list.append(f"{i}. {amount_text} - {tx.description}{org_text}")
+            
+            transaction_list.append("\n💡 **Para gestionar:**")
+            transaction_list.append("• 'Eliminar último gasto' - Borrar el más reciente")
+            transaction_list.append("• 'Cambiar gasto 1 a ₡8000' - Editar monto")
+            transaction_list.append("• 'Eliminar gasto 2' - Borrar específico")
+            
+            message = "\n".join(transaction_list)
+            
+            return {
+                "success": True,
+                "message": message,
+                "action": "transactions_listed",
+                "transaction_count": len(transactions)
+            }
+            
+        except Exception as e:
+            print(f"Error in transaction management: {e}")
+            return {
+                "success": False,
+                "message": "❌ No pude obtener tus gastos en este momento.",
+                "action": "management_error"
+            }
+    
     def _list_user_organizations(self, user_id: str, db: Session) -> Dict[str, Any]:
         """List user's organizations and memberships"""
         try:
@@ -1116,6 +1190,11 @@ class ConversationManager:
 • "Gasté ₡5000" - Te pregunto en qué
 • "Gasté ₡5000 en almuerzo" - Directo
 • "Gasto familia gasolina 40000" - Con contexto
+
+🔧 **GESTIONAR GASTOS:**
+• "Gestionar gastos" - Ver y editar gastos
+• "Eliminar último gasto" - Borrar el más reciente
+• "Mis últimos gastos" - Ver lista
 
 🏷️ **ORGANIZACIONES:**
 • "En qué familias estoy" - Ver tus organizaciones
