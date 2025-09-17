@@ -18,41 +18,14 @@ class MasterRouterAgent:
                 self.agent = Agent(
                     role="Master Financial Assistant Router",
                     goal="Understand ANY user message perfectly and route it to the correct specialized agent or handle it directly with full system knowledge.",
-                    backstory="""Eres el cerebro central del sistema Edcora Finanzas. 
+                    backstory="""Eres un clasificador de intenciones que sigue reglas exactas.
                     
-                    CONOCES PERFECTAMENTE TODO EL SISTEMA:
+                    REGLA PRINCIPAL:
+                    - "presupuesto" en el mensaje = manage_budgets (SIEMPRE)
+                    - "familia/empresa/equipo" en el mensaje = create_organization
+                    - Solo "crear" = unknown
                     
-                    ORGANIZACIONES:
-                    - Crear: "crear familia", "nueva empresa", "hacer equipo"
-                    - Invitar: "invitar +506...", "agregar mi esposa", "invita a mi hermano"
-                    - Gestionar: "miembros", "acepto", "salir familia"
-                    
-                    TRANSACCIONES:
-                    - Gastos: "gasté ₡5000", "4000 en almuerzo", "pagué 50 dólares"
-                    - Contexto: Si usuario tiene múltiples organizaciones, SIEMPRE preguntar dónde va
-                    - Formatos flexibles: "gaste 4000 en Gymgo", "agregar 5000 a empresa"
-                    
-                    REPORTES:
-                    - "resumen", "cuánto gasté", "balance", "reporte familiar"
-                    
-                    AYUDA:
-                    - "cómo", "ayuda", "no entiendo", "comandos"
-                    
-                    INVITACIONES:
-                    - "acepto", "sí quiero unirme" = ACEPTAR INVITACIÓN (NO es transacción)
-                    
-                    TU TRABAJO:
-                    1. ENTENDER la intención real del usuario
-                    2. DETECTAR el contexto correcto (personal/familia/empresa)
-                    3. MANEJAR casos especiales como "acepto", "agregar a empresa"
-                    4. SER INTELIGENTE con formatos flexibles
-                    
-                    NUNCA CONFUNDAS:
-                    - "acepto" = aceptar invitación, NO transacción
-                    - "agregar 4000 a Gymgo" = gasto en empresa Gymgo
-                    - "gaste en Gymgo" = gasto en contexto de empresa Gymgo
-                    
-                    Siempre das respuestas claras, contextuales y precisas.""",
+                    Respondes SOLO JSON, sin explicaciones adicionales.""",
                     verbose=True,
                     allow_delegation=False
                 )
@@ -110,123 +83,50 @@ class MasterRouterAgent:
             
             task = Task(
                 description=f"""
-                CONTEXTO COMPLETO DEL SISTEMA:
-                {self.system_context[:3000]}
+                USUARIO: {user_context}
+                MENSAJE: "{message}"
                 
-                CONTEXTO DEL USUARIO:
-                {user_context}
+                REGLAS CRÍTICAS (SEGUIR EXACTAMENTE):
                 
-                MENSAJE DEL USUARIO: "{message}"
+                1. Si el mensaje contiene "presupuesto" o "budget" → SIEMPRE "manage_budgets"
+                2. Si el mensaje contiene "familia" o "empresa" o "equipo" → "create_organization"  
+                3. Si el mensaje es solo "crear" → "unknown" (para que pregunte qué crear)
+                4. Si contiene "acepto" → "accept_invitation"
+                5. Si contiene "gasté" o números con ₡ → "create_transaction"
+                6. Si contiene "resumen" o "reporte" → "generate_report"
                 
-                ANALIZA EL MENSAJE Y DETERMINA:
+                EJEMPLOS EXACTOS:
+                - "crear presupuesto" → manage_budgets
+                - "crear presupuesto 10000" → manage_budgets  
+                - "presupuesto comida" → manage_budgets
+                - "crear familia" → create_organization
+                - "crear empresa" → create_organization
+                - "crear" → unknown
+                - "acepto" → accept_invitation
                 
-                1. TIPO DE ACCIÓN:
-                   ⚠️ **IMPORTANTE**: "presupuesto" SIN "familia/empresa/equipo" = manage_budgets
-                   
-                   - "accept_invitation": "acepto", "sí quiero unirme" (NO ES TRANSACCIÓN)
-                   - "create_organization": "crear familia", "nueva empresa", "agregar familia", "agregar empresa" (DEBE tener familia/empresa/equipo)
-                   - "invite_member": "invitar", "agregar persona" (con nombre de persona)
-                   - "list_members": "miembros", "quién está"
-                   - "leave_organization": "salir", "abandonar"
-                   - "create_transaction": gastos/ingresos ("gasté", "ingreso", "4000 en")
-                   - "generate_report": "resumen", "cuánto", "balance", "reporte", "gastos del mes", "mis gastos", "total gastos"
-                   - "manage_transactions": "eliminar gasto", "borrar gasto", "editar gasto", "cambiar gasto", "últimos gastos", "transacciones recientes"
-                   - "manage_budgets": "crear presupuesto", "presupuesto para", "límite de gasto", "budget", "alertas de gasto", "presupuesto mensual" (CUALQUIER mensaje con "presupuesto" que NO tenga "familia/empresa/equipo")
-                   - "privacy_request": "privacidad", "datos", "derechos", "seguridad", "eliminar cuenta"
-                   - "help_request": "cómo", "ayuda", "no entiendo", "comandos", "funciones", "qué puedo hacer"
+                TIPOS DE ACCIÓN VÁLIDOS:
+                - accept_invitation
+                - create_organization  
+                - invite_member
+                - list_members
+                - leave_organization
+                - create_transaction
+                - generate_report
+                - manage_transactions
+                - manage_budgets
+                - privacy_request
+                - help_request
+                - unknown
                 
-                2. PARÁMETROS ESPECÍFICOS:
-                   Para transacciones:
-                   - amount: cantidad numérica
-                   - description: descripción del gasto
-                   - organization_context: a qué organización va (si se especifica)
-                   - transaction_type: "expense" o "income"
-                   
-                   Para organizaciones:
-                   - organization_name: nombre de la organización
-                   - person_to_invite: persona a invitar (solo si no hay número)
-                   - phone_number: número de teléfono si se detecta
-                   
-                   Para presupuestos:
-                   - budget_name: nombre del presupuesto
-                   - budget_amount: límite del presupuesto
-                   - budget_category: categoría específica o "general"
-                   - budget_period: "weekly", "monthly", "yearly"
-                   - alert_percentage: porcentaje para alertas (por defecto 80)
-                   
-                   DETECCIÓN DE TELÉFONOS:
-                   - "+50686956438" → phone_number: "+50686956438"
-                   - "506 8695 6438" → phone_number: "+50686956438"
-                   - "8695-6438" → phone_number: "+50686956438"
-                
-                3. CASOS ESPECIALES:
-                   - "acepto" = DEFINITIVAMENTE accept_invitation
-                   - "agregar 4000 a Gymgo" = transacción de 4000 en contexto Gymgo
-                   - "gaste 4000 en Gymgo" = transacción de 4000 en contexto Gymgo
-                   - "agregar familia Campos Carranza" = create_organization con nombre "Campos Carranza"
-                   - "crear empresa MiEmpresa" = create_organization con nombre "MiEmpresa"
-                   
-                   ⚠️ PRESUPUESTOS VS ORGANIZACIONES - REGLAS CRÍTICAS:
-                   - "crear presupuesto" = manage_budgets (NO create_organization)
-                   - "crear presupuesto comida" = manage_budgets (NO create_organization)
-                   - "presupuesto para casa" = manage_budgets (NO create_organization)  
-                   - "presupuesto mensual" = manage_budgets (NO create_organization)
-                   - "budget de $500" = manage_budgets (NO create_organization)
-                   
-                   SOLO create_organization SI:
-                   - "crear familia presupuesto" = create_organization con nombre "presupuesto"
-                   - "crear empresa presupuestos" = create_organization con nombre "presupuestos"
-                   
-                   REGLA: Si mensaje contiene "presupuesto" pero NO contiene "familia/empresa/equipo/organización" = SIEMPRE manage_budgets
-                   
-                   INVITACIONES CON NÚMEROS:
-                   - "Invita a +50686956438" = invite_member con phone_number "+50686956438"
-                   - "agregar +506..." = invite_member con phone_number detectado
-                   - "invitar mi esposa +506..." = invite_member con phone_number detectado
-                   
-                   INVITACIONES SIN NÚMEROS:
-                   - "invitar a mi esposa" = invite_member con person_to_invite "mi esposa"
-                   
-                   REPORTES Y RESÚMENES:
-                   - "resumen de gastos" = generate_report
-                   - "cuánto he gastado" = generate_report
-                   - "balance del mes" = generate_report
-                   - "mis gastos" = generate_report
-                   - "reporte" = generate_report
-                   
-                   GESTIÓN DE TRANSACCIONES:
-                   - "eliminar último gasto" = manage_transactions
-                   - "borrar gasto de almuerzo" = manage_transactions
-                   - "editar gasto" = manage_transactions
-                   - "cambiar último gasto" = manage_transactions
-                   - "mis últimos gastos" = manage_transactions
-                   
-                   GESTIÓN DE PRESUPUESTOS:
-                   - "crear presupuesto de ₡100000 para comida" = manage_budgets
-                   - "presupuesto mensual de 200000" = manage_budgets
-                   - "límite de ₡50000 en entretenimiento" = manage_budgets
-                   - "budget de $500 para gastos" = manage_budgets
-                   - "alertas al 75% del presupuesto" = manage_budgets
-                
-                RESPONDE EN JSON:
+                RESPONDE SOLO JSON SIN TEXTO ADICIONAL:
                 {{
-                    "action_type": "tipo_de_acción",
-                    "confidence": "alta/media/baja",
+                    "action_type": "una_de_las_acciones_válidas",
+                    "confidence": "alta",
                     "parameters": {{
-                        "amount": number_o_null,
-                        "description": "descripción_o_null",
-                        "organization_context": "organización_específica_o_null",
-                        "transaction_type": "expense/income/null",
-                        "organization_name": "nombre_org_o_null",
-                        "person_to_invite": "persona_o_null",
-                        "phone_number": "número_o_null",
-                        "budget_name": "nombre_presupuesto_o_null",
-                        "budget_amount": "monto_presupuesto_o_null",
-                        "budget_category": "categoría_presupuesto_o_null",
-                        "budget_period": "periodo_presupuesto_o_null",
-                        "alert_percentage": "porcentaje_alerta_o_null"
-                    }},
-                    "reasoning": "explicación_breve_de_la_decisión"
+                        "amount": extraer_número_o_null,
+                        "budget_category": extraer_categoría_o_null,
+                        "organization_name": extraer_nombre_org_o_null
+                    }}
                 }}
                 """,
                 agent=self.agent,
@@ -304,6 +204,10 @@ class MasterRouterAgent:
         
         elif action_type == "help_request":
             return self._handle_help_request(original_message, user_id, db)
+        
+        elif action_type == "unknown":
+            # Handle ambiguous commands with disambiguation agent
+            return self._handle_ambiguous_command(original_message, user_id, db)
         
         else:
             # Handle ambiguous commands with disambiguation agent
