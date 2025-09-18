@@ -91,6 +91,20 @@ NUNCA inventes información que no esté en el mensaje.""",
     def _analyze_message_intent(self, message: str, context: ConversationContext, db: Session = None) -> Dict[str, Any]:
         """Analyze message intent with AI or fallback to regex"""
         
+        # OPTIMIZATION: Skip CrewAI for simple continuation responses
+        if context.current_flow != "none":
+            # These are likely continuation responses - use fast regex
+            if (len(message.strip()) <= 20 or 
+                message.strip().lower() in ["1", "2", "personal", "si", "no", "acepto"] or
+                message.strip().isdigit()):
+                print(f"🚀 FAST TRACK: Skipping AI for simple response '{message}'")
+                return {
+                    "type": "unknown",
+                    "confidence": 0.3,
+                    "is_new_flow": False,
+                    "extracted_data": {}
+                }
+        
         # Get user organizations for context if we have db session
         user_organizations = []
         if db:
@@ -100,6 +114,7 @@ NUNCA inventes información que no esté en el mensaje.""",
             except:
                 user_organizations = []
         
+        # Use AI for complex intent analysis
         if self.has_openai and self.intelligent_agent:
             return self._ai_analyze_intent(message, context, user_organizations)
         else:
@@ -115,27 +130,22 @@ NUNCA inventes información que no esté en el mensaje.""",
         
         task = Task(
             description=f"""
-            INTENT-BASED ROUTER siguiendo mejores prácticas de Anthropic:
+            TAREA SIMPLE: Clasifica este mensaje financiero.
             
             MENSAJE: "{message}"
             CONTEXTO: {org_context}
             
-            PASO 1: INTENT CLASSIFICATION (MAPEO DIRECTO)
-            ┌─ Gastos: "gasté", "gasto", "compré", "pago" + monto → add_expense
-            ├─ Presupuestos: "presupuesto", "budget" → create_budget  
-            ├─ Organizaciones: "crear familia/empresa" → create_organization
-            ├─ Reportes: "resumen", "reporte", "balance" → view_report
-            ├─ Listar: "qué familias", "mis organizaciones" → list_organizations
-            ├─ Gestionar: "gestionar gastos", "eliminar gasto" → manage_transactions
-            ├─ Invitaciones: "acepto" → accept_invitation
-            ├─ Ayuda: "ayuda", "help" → help
-            └─ Ambiguo: respuestas cortas, números solos → unknown
+            REGLAS ESTRICTAS:
+            1. Si contiene "gasto/gasté/compré/pago" + número → add_expense
+            2. Si contiene "presupuesto" → create_budget
+            3. Si contiene "resumen/reporte" → view_report  
+            4. Si es respuesta corta (1-2 palabras) → unknown
+            5. organization_context = null SIEMPRE (a menos que diga explícitamente "personal/familia/empresa")
             
-            PASO 2: DATA EXTRACTION (SOLO SI MENCIONADO)
-            - amount: número exacto del mensaje
-            - description: descripción sin monto ni organizaciones
-            - organization_context: SOLO si se menciona explícitamente ("personal", "familia", etc.)
-            - category: categoría obvia del contexto
+            DATOS A EXTRAER:
+            - amount: solo números del mensaje
+            - description: texto sin números
+            - organization_context: null (excepto si explícito)
             
             REGLA CRÍTICA: organization_context SOLO debe tener valor si se menciona explícitamente.
             
@@ -659,7 +669,55 @@ NUNCA inventes información que no esté en el mensaje.""",
         return None
     
     def _intelligent_organization_selection(self, message: str, user_organizations: List, user_id: str, db: Session) -> Optional[Dict]:
-        """Use AI to intelligently parse organization selection"""
+        """Use AI to intelligently parse organization selection with fast-track for simple responses"""
+        
+        # 🚀 FAST-TRACK: Handle simple responses directly (no CrewAI needed)
+        message_lower = message.lower().strip()
+        
+        print(f"🚀 FAST-TRACK: Checking simple response '{message_lower}'")
+        
+        # Handle "personal" variations
+        if message_lower in ["personal", "mío", "mio", "propio", "yo"]:
+            print(f"🚀 FAST-TRACK: Personal selected")
+            return {
+                "organization_id": None,
+                "organization_name": "Personal"
+            }
+        
+        # Handle numeric selection
+        try:
+            selection_num = int(message_lower)
+            print(f"🚀 FAST-TRACK: Numeric selection {selection_num}")
+            
+            # Check if it's a valid organization number
+            if 1 <= selection_num <= len(user_organizations):
+                org = user_organizations[selection_num - 1]
+                print(f"🚀 FAST-TRACK: Selected org {org['name']}")
+                return {
+                    "organization_id": org["id"],
+                    "organization_name": org["name"]
+                }
+            # Check if it's the personal option (last number)
+            elif selection_num == len(user_organizations) + 1:
+                print(f"🚀 FAST-TRACK: Personal option selected via number")
+                return {
+                    "organization_id": None,
+                    "organization_name": "Personal"
+                }
+        except ValueError:
+            pass
+        
+        # For exact organization name matches
+        for org in user_organizations:
+            if org["name"].lower() == message_lower:
+                print(f"🚀 FAST-TRACK: Exact name match for {org['name']}")
+                return {
+                    "organization_id": org["id"],
+                    "organization_name": org["name"]
+                }
+        
+        # 🧠 AI-POWERED: Use CrewAI only for complex/ambiguous cases
+        print(f"🧠 Using AI for complex selection: '{message}'")
         
         if self.has_openai and self.intelligent_agent:
             return self._ai_parse_organization_selection(message, user_organizations)
