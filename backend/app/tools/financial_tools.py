@@ -77,7 +77,14 @@ def add_expense_tool(amount: float, description: str, organization_context: str 
                 if not found_org:
                     if context_lower in ["familia", "familiar", "family"]:
                         # Look for family type organization
-                        family_orgs = [org for org in user_organizations if org.type == "family"]
+                        family_orgs = []
+                        for org in user_organizations:
+                            org_type = org.type if hasattr(org, 'type') else None
+                            if hasattr(org_type, 'value'):
+                                org_type = org_type.value
+                            if org_type == "family":
+                                family_orgs.append(org)
+                        
                         if family_orgs:
                             found_org = family_orgs[0]  # Take first family org
                 
@@ -234,7 +241,14 @@ def add_income_tool(amount: float, description: str, organization_context: str =
                 if not found_org:
                     if context_lower in ["familia", "familiar", "family"]:
                         # Look for family type organization
-                        family_orgs = [org for org in user_organizations if org.type == "family"]
+                        family_orgs = []
+                        for org in user_organizations:
+                            org_type = org.type if hasattr(org, 'type') else None
+                            if hasattr(org_type, 'value'):
+                                org_type = org_type.value
+                            if org_type == "family":
+                                family_orgs.append(org)
+                        
                         if family_orgs:
                             found_org = family_orgs[0]  # Take first family org
                 
@@ -442,7 +456,8 @@ def list_organizations_tool() -> str:
 @tool("create_organization")
 def create_organization_tool(organization_name: str) -> str:
     """Create a new family organization.
-    Use this when user wants to create a new family like 'crear familia Mi Hogar'."""
+    Use this when user wants to create a new family like 'crear familia Mi Hogar'.
+    If user just says 'crear familia' without a name, ask them for the family name."""
     
     try:
         from app.services.organization_service import OrganizationService
@@ -468,9 +483,16 @@ def create_organization_tool(organization_name: str) -> str:
         return f"❌ Error al crear organización: {str(e)}"
 
 
+@tool("ask_family_name")
+def ask_family_name_tool() -> str:
+    """Ask the user for a family name when they say 'crear familia' without specifying a name."""
+    return "👨‍👩‍👧‍👦 **¿Cómo quieres llamar a tu familia?**\n\nEjemplos:\n• 'Mi Hogar'\n• 'Familia Pérez'\n• 'Casa González'\n\n📝 Escribe el nombre de tu familia:"
+
+
 # Export tools for easy access
 AddExpenseTool = add_expense_tool
 AddIncomeTool = add_income_tool
 GenerateReportTool = generate_report_tool
 ListOrganizationsTool = list_organizations_tool
 CreateOrganizationTool = create_organization_tool
+AskFamilyNameTool = ask_family_name_tool
