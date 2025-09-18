@@ -64,7 +64,14 @@ NUNCA inventes información que no esté en el mensaje.""",
         pending_transaction = conversation_state.get_pending_transaction(user_id)
         if pending_transaction:
             print(f"💾 FOUND PENDING TRANSACTION: user={user_id}, data={pending_transaction['transaction_data']}")
-            return self._handle_organization_selection_response(message, user_id, db, pending_transaction)
+            
+            # 🛡️ GUARD: Check if user wants to do something else (cancel pending transaction)
+            if self._is_clear_new_intent(message):
+                print(f"🚫 CLEAR NEW INTENT DETECTED: Clearing pending transaction for '{message}'")
+                conversation_state.clear_pending_transaction(user_id)
+                # Continue with normal processing below
+            else:
+                return self._handle_organization_selection_response(message, user_id, db, pending_transaction)
         
         # Get or create session
         context = self._get_or_create_context(user_id)
@@ -693,6 +700,52 @@ NUNCA inventes información que no esté en el mensaje.""",
         
         print(f"🔍 NO MATCH FOUND")
         return None
+    
+    def _is_clear_new_intent(self, message: str) -> bool:
+        """Detect if message is clearly a new intent (not organization selection)"""
+        message_lower = message.lower().strip()
+        
+        # 🛡️ SIMPLE ORGANIZATION SELECTIONS (do NOT cancel pending transaction)
+        simple_org_selections = [
+            "1", "2", "3", "4", "5",  # Numbers
+            "personal", "mío", "mio", "propio",  # Personal variations
+            "mi hogar", "familia", "empresa", "trabajo"  # Simple org names
+        ]
+        
+        # If it's a simple org selection, it's NOT a new intent
+        if message_lower in simple_org_selections:
+            return False
+        
+        # 🧠 COMPLEX ANALYSIS: Check for command + context patterns
+        command_patterns = [
+            # Reports with context: "resumen personal", "gastos familia" 
+            r"(resumen|reporte|balance|gastos|ingresos|total|cuanto|cuánto)\s+(personal|familia|empresa|trabajo)",
+            
+            # Clear new transactions: "gasto 500", "compré algo"
+            r"(gasto|gasté|compré|pago|pagué|ingreso|ganancia)\s+\d+",
+            r"(gasto|gasté|compré|pago|pagué)\s+\w+",
+            
+            # Management commands: "crear familia", "gestionar gastos"
+            r"(crear|gestionar|administrar|configurar|ver|mostrar|listar)\s+\w+",
+            
+            # Help and navigation
+            r"(ayuda|help|opciones|menú|menu|cancelar|cancel)",
+            
+            # Standalone report commands
+            r"^(resumen|reporte|balance|estado|informe)$"
+        ]
+        
+        # Check complex patterns with regex
+        import re
+        for pattern in command_patterns:
+            if re.search(pattern, message_lower):
+                return True
+        
+        # Check if message is too long/complex to be simple org selection
+        if len(message_lower) > 20:
+            return True
+            
+        return False
     
     def _handle_organization_selection_response(self, message: str, user_id: str, db: Session, pending_transaction: Dict) -> Dict[str, Any]:
         """Handle organization selection response for pending transaction"""
