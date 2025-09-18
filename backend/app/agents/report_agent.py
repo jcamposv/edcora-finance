@@ -6,27 +6,70 @@ from app.core.llm_config import get_openai_config
 from app.services.transaction_service import TransactionService
 from app.services.organization_service import OrganizationService
 from app.models.transaction import TransactionType
+from app.tools.report_tools import (
+    get_transaction_data_tool,
+    format_report_tool, 
+    detect_report_type_tool
+)
 import calendar
 
 class ReportAgent:
     """Intelligent agent to generate financial reports and summaries from natural language requests."""
     
-    def __init__(self):
+    def __init__(self, db: Session = None):
+        self.db = db
+        
         try:
             # Setup OpenAI environment
             self.has_openai = get_openai_config()
             
+            # Initialize tools for the report agent
+            self.tools = []
+            if db:
+                self.tools = [
+                    get_transaction_data_tool,
+                    format_report_tool,
+                    detect_report_type_tool
+                ]
+            
             if self.has_openai:
                 self.agent = Agent(
-                    role="Financial Report Analyst",
-                    goal="Generate comprehensive and insightful financial reports based on user requests in natural language",
-                    backstory="""You are an expert financial analyst who specializes in creating clear, 
-                    actionable reports from transaction data. You understand various time periods (today, 
-                    this week, this month, last month, etc.) and can provide insights about spending 
-                    patterns, categories, and trends. You communicate in Spanish and present information 
-                    in a friendly, easy-to-understand format for WhatsApp messages.""",
+                    role="Analista Financiero Costarricense con Herramientas",
+                    goal="Generar reportes financieros usando herramientas especializadas para obtener y formatear datos",
+                    backstory="""Eres un analista financiero experto con acceso a herramientas avanzadas de datos.
+
+HERRAMIENTAS DISPONIBLES:
+• detect_report_type: Analiza inteligentemente qué tipo de reporte solicita el usuario (período, organización, detalle)
+• get_transaction_data: Obtiene datos de transacciones filtrados por período y organización
+• format_report: Formatea datos en reportes legibles con emojis
+
+PROCESO OBLIGATORIO:
+1. SIEMPRE usa "detect_report_type" primero para analizar la solicitud del usuario
+2. SIEMPRE usa "get_transaction_data" con los parámetros detectados (user_id, período, organización)
+3. SIEMPRE usa "format_report" para crear el reporte final formateado
+
+DETECCIÓN INTELIGENTE DE CONTEXTO:
+• "resumen personal" = organización: "personal" (solo transacciones personales)
+• "resumen familia" / "resumen mi hogar" = organización: "family" (todas las organizaciones del usuario)
+• "resumen" (sin especificar) = todas las transacciones del usuario
+
+PERÍODOS SOPORTADOS:
+• hoy, esta semana, este mes, mes pasado, últimos 7 días, últimos 30 días
+
+TIPOS DE REPORTE:
+• standard: formato normal con categorías principales
+• detailed: reporte completo con insights y porcentajes
+• summary: resumen rápido solo con totales
+
+ESTILO COSTARRICENSE:
+• Colones (₡) como moneda principal
+• Emojis para claridad en WhatsApp
+• Lenguaje motivador y amigable
+
+NUNCA inventes datos. SIEMPRE usa las herramientas para obtener información real.""",
                     verbose=True,
-                    allow_delegation=False
+                    allow_delegation=False,
+                    tools=self.tools  # 🔧 Usando CrewAI tools feature
                 )
             else:
                 self.agent = None
@@ -55,40 +98,54 @@ class ReportAgent:
     def generate_report(self, message: str, user_id: str, db: Session, currency_symbol: str = "₡") -> Dict[str, Any]:
         """Generate a financial report based on the user's natural language request."""
         
-        # Get transaction data
+        # Update db reference for tools
+        if self.db != db:
+            self.db = db
+            # Re-initialize tools with new db
+            if db and self.has_openai:
+                self.tools = [
+                    get_transaction_data_tool,
+                    format_report_tool,
+                    detect_report_type_tool
+                ]
+                # Update agent tools
+                self.agent.tools = self.tools
+        
+        # Get transactions data first
         transactions_data = self._get_transactions_data(user_id, db, message)
         
         if not self.has_openai or not self.agent:
+            # Fallback without AI
             return self._generate_simple_report(transactions_data, currency_symbol, message)
         
         try:
             task = Task(
                 description=f"""
-                Generate a financial report based on this user request: "{message}"
+                Genera un reporte financiero usando las herramientas disponibles.
                 
-                Transaction Data:
-                {self._format_transactions_for_ai(transactions_data, currency_symbol)}
+                SOLICITUD DEL USUARIO: "{message}"
+                USER_ID: {user_id}
+                MONEDA: {currency_symbol}
                 
-                Create a comprehensive but concise report that includes:
-                1. Direct response to the user's specific question
-                2. Total expenses and income for the requested period
-                3. Top spending categories if applicable
-                4. Brief insights or observations
-                5. Friendly recommendations if relevant
+                PROCESO OBLIGATORIO:
+                1. USA "detect_report_type" para analizar la solicitud: "{message}"
+                2. USA "get_transaction_data" con los parámetros detectados (user_id: {user_id})
+                3. USA "format_report" para crear el reporte final con currency_symbol: {currency_symbol}
                 
-                Keep the response conversational and suitable for WhatsApp (under 500 characters if possible).
-                Use the currency symbol: {currency_symbol}
-                Respond in Spanish.
-                
-                Format the response to be clear and easy to read in a messaging app.
+                IMPORTANTE:
+                • SIEMPRE usa las 3 herramientas en orden
+                • NO inventes datos, usa solo lo que devuelvan las herramientas
+                • Formato final para WhatsApp (máximo 500 caracteres)
+                • Responde en español con tono motivador
                 """,
                 agent=self.agent,
-                expected_output="A friendly, informative financial report in Spanish suitable for WhatsApp"
+                expected_output="Reporte financiero generado usando herramientas especializadas"
             )
             
             crew = Crew(
                 agents=[self.agent],
                 tasks=[task],
+                memory=True,  # 🧠 Enable memory for report context
                 verbose=False
             )
             

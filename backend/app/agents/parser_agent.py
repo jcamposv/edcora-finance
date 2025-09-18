@@ -4,6 +4,10 @@ from decimal import Decimal
 from typing import Optional, Dict, Any
 from app.core.llm_config import get_openai_config
 from app.agents.currency_agent import CurrencyAgent
+from app.tools.parser_tools import (
+    parse_message_tool,
+    validate_parsing_tool
+)
 
 class ParserAgent:
     def __init__(self):
@@ -11,13 +15,42 @@ class ParserAgent:
             # Setup OpenAI environment
             self.has_openai = get_openai_config()
             
+            # Initialize tools for message parsing
+            self.tools = [
+                parse_message_tool,
+                validate_parsing_tool
+            ]
+            
             if self.has_openai:
                 self.agent = Agent(
-                    role="Expense Parser",
-                    goal="Extract financial information from WhatsApp messages",
-                    backstory="You are an expert at parsing Spanish text messages to extract financial transaction information. You understand multiple currencies and common expense descriptions across Latin America.",
+                    role="Experto Analizador de Mensajes Financieros con Herramientas",
+                    goal="Extraer información financiera usando herramientas especializadas de análisis",
+                    backstory="""Eres un experto en procesamiento de lenguaje natural con acceso a herramientas avanzadas.
+
+HERRAMIENTAS DISPONIBLES:
+• parse_message: Analiza mensajes para extraer información financiera
+• validate_parsing: Valida la información extraída para consistencia
+
+PROCESO DE TRABAJO:
+1. SIEMPRE usa "parse_message" para analizar el mensaje financiero
+2. SIEMPRE usa "validate_parsing" para verificar la calidad de los datos extraídos
+3. Contexto organizacional SOLO si se menciona explícitamente
+
+EJEMPLOS CRÍTICOS DE TIPO DE TRANSACCIÓN:
+- "ingreso 60000 personal" → type: "income", description: "ingreso general", org: "personal"
+- "Gasto familia gasolina 40000" → type: "expense", organization_context: "familia"
+- "Compré almuerzo 5000" → type: "expense", organization_context: null (NO mencionado)
+- "salario 150000" → type: "income", description: "salario"
+- "cobré 25000 freelance" → type: "income", description: "freelance"
+
+DETECCIÓN DE TIPO:
+• INCOME: ingreso, ganancia, salario, cobré, recibí, gané, recibo
+• EXPENSE: gasto, gasté, pagué, compré, pago, compra, costo
+
+NUNCA inventes contextos organizacionales. SIEMPRE usa las herramientas.""",
                     verbose=True,
-                    allow_delegation=False
+                    allow_delegation=False,
+                    tools=self.tools
                 )
             else:
                 self.agent = None
@@ -37,39 +70,44 @@ class ParserAgent:
         Returns dict with amount, description, transaction type, and currency info.
         """
         
-        task = Task(
-            description=f"""
-            Parse this WhatsApp message to extract financial transaction information:
-            "{message}"
-            
-            Extract:
-            1. Amount (numeric value, handle symbols like ₡, colones, etc.)
-            2. Transaction type (income or expense - default to expense if unclear)
-            3. Description (clean description of the transaction)
-            
-            Return the information in this exact format:
-            Amount: [numeric_value]
-            Type: [income|expense]
-            Description: [clean_description]
-            """,
-            agent=self.agent,
-            expected_output="Structured transaction information with amount, type, and description"
-        )
-        
-        crew = Crew(
-            agents=[self.agent],
-            tasks=[task],
-            verbose=True
-        )
+        if not self.has_openai or not self.agent:
+            return self._regex_fallback_parse(message)
         
         try:
-            # Parse the message for amount and type
-            if self.has_openai:
-                result = crew.kickoff()
-                parsed_data = self._parse_crew_result(str(result), message)
-            else:
-                # Use regex fallback if no OpenAI configured
-                parsed_data = self._regex_fallback_parse(message)
+            task = Task(
+                description=f"""
+                Analiza este mensaje financiero usando las herramientas disponibles.
+                
+                MENSAJE: "{message}"
+                TELÉFONO: "{phone_number or 'No disponible'}"
+                
+                PROCESO OBLIGATORIO:
+                1. USA "parse_message" para extraer información del mensaje: "{message}"
+                2. USA "validate_parsing" para verificar la calidad de los datos extraídos
+                
+                IMPORTANTE:
+                • SIEMPRE usa ambas herramientas en orden
+                • NO inventes contextos organizacionales
+                • Organization_context SOLO si se menciona explícitamente
+                • Devuelve el resultado final de las herramientas
+                
+                EJEMPLOS CRÍTICOS:
+                - "Gasto familia gasolina 40000" → organization_context: "familia" (explícito)
+                - "Compré almuerzo 5000" → organization_context: null (NO mencionado)
+                - "Gasto personal 2000" → organization_context: "personal" (explícito)
+                """,
+                agent=self.agent,
+                expected_output="Información financiera extraída usando herramientas especializadas"
+            )
+            
+            crew = Crew(
+                agents=[self.agent],
+                tasks=[task],
+                verbose=False
+            )
+            
+            result = crew.kickoff()
+            parsed_data = self._parse_crew_result(str(result), message)
             
             # Detect currency using the intelligent agent
             if parsed_data["success"] and phone_number and self.currency_agent:
@@ -104,9 +142,46 @@ class ParserAgent:
     def _parse_crew_result(self, result: str, original_message: str) -> Dict[str, Any]:
         """Parse the CrewAI result to extract structured information."""
         try:
+            # Try to parse as JSON first (new format)
+            import json
+            import re
+            
+            # Extract JSON from the result
+            json_match = re.search(r'\{.*\}', result, re.DOTALL)
+            if json_match:
+                json_str = json_match.group(0)
+                parsed_json = json.loads(json_str)
+                
+                # Extract and validate data
+                amount = parsed_json.get("amount")
+                if isinstance(amount, str):
+                    amount = self._extract_amount(amount)
+                elif isinstance(amount, (int, float)):
+                    amount = Decimal(str(amount))
+                
+                transaction_type = parsed_json.get("type", "expense").lower()
+                if transaction_type not in ["income", "expense"]:
+                    transaction_type = "expense"
+                
+                description = parsed_json.get("description", original_message)
+                organization_context = parsed_json.get("organization_context")
+                category = parsed_json.get("category", "General")
+                
+                print(f"🧠 AI PARSED: amount={amount}, description='{description}', org_context='{organization_context}', category='{category}'")
+                
+                return {
+                    "amount": amount,
+                    "type": transaction_type,
+                    "description": description,
+                    "organization_context": organization_context,
+                    "category": category,
+                    "success": amount is not None
+                }
+            
+            # Fallback to old format parsing
             lines = result.strip().split('\n')
             amount = None
-            transaction_type = "expense"  # default
+            transaction_type = "expense"
             description = original_message
             
             for line in lines:
@@ -124,40 +199,105 @@ class ParserAgent:
                 "amount": amount,
                 "type": transaction_type,
                 "description": description,
+                "organization_context": None,
+                "category": "General",
                 "success": amount is not None
             }
-        except Exception:
+            
+        except Exception as e:
+            print(f"Error parsing CrewAI result: {e}")
             return self._regex_fallback_parse(original_message)
     
     def _regex_fallback_parse(self, message: str) -> Dict[str, Any]:
         """Fallback regex parsing when CrewAI fails."""
-        # Extract amount using regex
+        # Extract amount using regex - enhanced patterns
         amount_patterns = [
-            r'₡\s*(\d{1,3}(?:,\d{3})*(?:\.\d{2})?)',  # ₡1,000 or ₡1,000.50
-            r'(\d{1,3}(?:,\d{3})*(?:\.\d{2})?)\s*(?:colones?|₡)',  # 1000 colones
-            r'(\d{1,3}(?:,\d{3})*(?:\.\d{2})?)',  # Just numbers
+            r'₡\s*(\d{1,3}(?:,?\d{3})*(?:\.\d{2})?)',  # ₡1,000 or ₡1,000.50
+            r'\$\s*(\d{1,3}(?:,?\d{3})*(?:\.\d{2})?)',  # $1,000 or $1,000.50
+            r'(\d{1,3}(?:,?\d{3})*(?:\.\d{2})?)\s*(?:colones?|₡)',  # 1000 colones
+            r'(\d{1,3}(?:,?\d{3})*(?:\.\d{2})?)\s*(?:dollars?|dólares?|\$)',  # 1000 dollars
+            r'(\d{4,})',  # Just numbers with 4+ digits (likely amounts)
+            r'(\d{1,3}(?:,\d{3})+)',  # Numbers with comma separators like 1,000
+            r'(\d+(?:\.\d+)?)',  # Any number as last resort
         ]
         
         amount = None
         for pattern in amount_patterns:
-            match = re.search(pattern, message, re.IGNORECASE)
-            if match:
-                amount_str = match.group(1)
-                amount = self._extract_amount(amount_str)
-                break
+            matches = re.findall(pattern, message, re.IGNORECASE)
+            if matches:
+                try:
+                    # Take the largest number found (most likely to be the amount)
+                    amounts = []
+                    for match in matches:
+                        amount_str = match.replace(',', '')
+                        parsed_amount = self._extract_amount(amount_str)
+                        if parsed_amount and parsed_amount > 0:
+                            amounts.append(parsed_amount)
+                    
+                    if amounts:
+                        amount = max(amounts)
+                        break
+                except:
+                    continue
         
         # Determine transaction type
         transaction_type = "expense"  # default
-        income_keywords = ["ingreso", "ganancia", "salario", "pago", "cobré", "recibí"]
-        if any(keyword in message.lower() for keyword in income_keywords):
+        income_keywords = ["ingreso", "ganancia", "salario", "pago", "cobré", "recibí", "recibo", "gané"]
+        expense_keywords = ["gasto", "gasté", "pagué", "compré", "pago", "compra", "costo", "costó"]
+        
+        message_lower = message.lower()
+        if any(keyword in message_lower for keyword in income_keywords):
             transaction_type = "income"
+        elif any(keyword in message_lower for keyword in expense_keywords):
+            transaction_type = "expense"
+        
+        # Extract description by removing amounts and action words
+        description = self._extract_clean_description(message)
         
         return {
             "amount": amount,
             "type": transaction_type,
-            "description": message.strip(),
+            "description": description,
+            "organization_context": None,  # Regex can't detect context
+            "category": "General",  # Default category for regex
             "success": amount is not None
         }
+    
+    def _extract_clean_description(self, message: str) -> str:
+        """Extract a clean description from the message"""
+        import re
+        
+        # Remove action words
+        clean_message = message
+        action_patterns = [
+            r"gasté\s+", r"gaste\s+", r"pagué\s+", r"pague\s+", 
+            r"compré\s+", r"compre\s+", r"gasto\s+", r"agregar\s+gasto\s+",
+            r"pago\s+", r"compra\s+", r"costo\s+", r"costó\s+", r"invertí\s+", r"invirtí\s+"
+        ]
+        
+        for pattern in action_patterns:
+            clean_message = re.sub(pattern, "", clean_message, count=1, flags=re.IGNORECASE)
+        
+        # Remove amount patterns and currency symbols
+        clean_message = re.sub(r'₡\s*\d+(?:[,\d]*)?(?:\.\d+)?', '', clean_message)
+        clean_message = re.sub(r'\$\s*\d+(?:[,\d]*)?(?:\.\d+)?', '', clean_message)
+        clean_message = re.sub(r'\d+(?:[,\d]*)?(?:\.\d+)?\s*(?:colones?|dollars?|dólares?)', '', clean_message, flags=re.IGNORECASE)
+        clean_message = re.sub(r'\b\d{4,}\b', '', clean_message)  # Remove large numbers
+        
+        # Remove standalone currency symbols
+        clean_message = re.sub(r'\s*[₡\$]\s*', ' ', clean_message)
+        
+        # Clean up extra spaces and prepositions
+        clean_message = re.sub(r'\s+', ' ', clean_message)
+        clean_message = re.sub(r'^\s*(en|de|para|del|de\s+la)\s+', '', clean_message, flags=re.IGNORECASE)
+        
+        description = clean_message.strip()
+        
+        # If description is too short or empty, use a default
+        if len(description) < 2:
+            description = "Gasto general"
+        
+        return description
     
     def _extract_amount(self, amount_str: str) -> Optional[Decimal]:
         """Extract decimal amount from string."""

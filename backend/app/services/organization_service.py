@@ -272,3 +272,14 @@ class OrganizationService:
         ).first()
         
         return member.role if member else None
+    
+    @staticmethod
+    def get_user_membership(db: Session, user_id: str, organization_id: str) -> Optional[OrganizationMember]:
+        """Get user's membership details in the organization."""
+        return db.query(OrganizationMember).filter(
+            and_(
+                OrganizationMember.organization_id == organization_id,
+                OrganizationMember.user_id == user_id,
+                OrganizationMember.is_active == True
+            )
+        ).first()

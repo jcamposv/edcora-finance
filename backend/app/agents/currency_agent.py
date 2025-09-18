@@ -2,6 +2,10 @@ from crewai import Agent, Task, Crew
 import re
 from typing import Dict, Any, Optional, Tuple
 from app.core.llm_config import get_openai_config
+from app.tools.currency_tools import (
+    detect_currency_tool,
+    validate_currency_tool
+)
 
 class CurrencyAgent:
     """Intelligent agent to detect currency from phone number context and message text."""
@@ -11,21 +15,31 @@ class CurrencyAgent:
             # Setup OpenAI environment
             self.has_openai = get_openai_config()
             
+            # Initialize tools for currency detection
+            self.tools = [
+                detect_currency_tool,
+                validate_currency_tool
+            ]
+            
             if self.has_openai:
                 self.agent = Agent(
-                    role="Currency Detection Expert",
-                    goal="Intelligently detect the correct currency based on phone number country context and message content",
-                    backstory="""You are an expert in international currencies and regional financial conventions. 
-                    You understand that people often omit currency symbols when writing amounts, especially when using 
-                    their local currency. You can infer currency from:
-                    1. Phone number country codes (+506 = Costa Rica, +52 = Mexico, etc.)
-                    2. Explicit currency mentions (colones, dollars, pesos, etc.)
-                    3. Currency symbols (₡, $, €, etc.)
-                    4. Regional context and common usage patterns
-                    
-                    You're especially familiar with Latin American currencies and their common usage patterns.""",
+                    role="Experto en Detección de Monedas con Herramientas",
+                    goal="Detectar la moneda correcta usando herramientas especializadas de análisis",
+                    backstory="""Eres un experto en monedas internacionales con acceso a herramientas avanzadas.
+
+HERRAMIENTAS DISPONIBLES:
+• detect_currency: Analiza mensajes y contexto telefónico para detectar moneda
+• validate_currency: Valida códigos y símbolos de moneda
+
+PROCESO DE TRABAJO:
+1. SIEMPRE usa "detect_currency" para analizar el mensaje y número telefónico
+2. SIEMPRE usa "validate_currency" para confirmar la consistencia
+3. Considera contexto regional (Costa Rica usa colones, México pesos, etc.)
+
+NUNCA inventes datos. SIEMPRE usa las herramientas para obtener información real.""",
                     verbose=True,
-                    allow_delegation=False
+                    allow_delegation=False,
+                    tools=self.tools
                 )
             else:
                 self.agent = None
@@ -44,38 +58,25 @@ class CurrencyAgent:
             return self._fallback_currency_detection(message, phone_number)
         
         try:
-            # Extract country code from phone number
-            country_context = self._get_country_context(phone_number)
-            
             task = Task(
                 description=f"""
-                Analyze this financial message and phone number to detect the intended currency:
+                Detecta la moneda correcta usando las herramientas disponibles.
                 
-                Message: "{message}"
-                Phone number: "{phone_number}"
-                Likely country context: {country_context}
+                MENSAJE: "{message}"
+                TELÉFONO: "{phone_number}"
                 
-                Consider:
-                1. Explicit currency mentions (colones, dollars, pesos, euros, etc.)
-                2. Currency symbols (₡, $, €, £, etc.)
-                3. Phone number country code context
-                4. Regional conventions (e.g., Costa Ricans often say just "5000" meaning colones)
-                5. Common patterns in Latin America
+                PROCESO OBLIGATORIO:
+                1. USA "detect_currency" para analizar el mensaje: "{message}" y teléfono: "{phone_number}"
+                2. USA "validate_currency" para confirmar el código y símbolo detectados
                 
-                Determine the most likely currency and provide:
-                - Currency code (ISO 4217: USD, CRC, MXN, EUR, etc.)
-                - Currency symbol (₡, $, €, etc.)
-                - Confidence level (high/medium/low)
-                - Brief reasoning
-                
-                Return ONLY in this exact format:
-                Currency: [ISO_CODE]
-                Symbol: [SYMBOL]
-                Confidence: [high/medium/low]
-                Reasoning: [brief_explanation]
+                IMPORTANTE:
+                • SIEMPRE usa ambas herramientas en orden
+                • NO inventes códigos de moneda, usa solo lo que devuelvan las herramientas
+                • Considera contexto regional (Costa Rica=colones, México=pesos, etc.)
+                • Devuelve el resultado final de las herramientas
                 """,
                 agent=self.agent,
-                expected_output="Currency detection with code, symbol, confidence level and reasoning"
+                expected_output="Detección de moneda usando herramientas especializadas"
             )
             
             crew = Crew(
@@ -85,7 +86,17 @@ class CurrencyAgent:
             )
             
             result = crew.kickoff()
-            return self._parse_agent_result(str(result), message, phone_number)
+            
+            # Try to extract structured data from the result
+            result_str = str(result).strip()
+            
+            # If the result contains the expected structure, parse it
+            if "currency_code" in result_str or "Currency:" in result_str:
+                return self._parse_agent_result(result_str, message, phone_number)
+            else:
+                # Fallback if agent doesn't return expected format
+                print(f"Unexpected agent result format: {result_str}")
+                return self._fallback_currency_detection(message, phone_number)
             
         except Exception as e:
             print(f"CurrencyAgent failed: {e}")

@@ -8,12 +8,13 @@ from app.services.user_service import UserService
 from app.services.transaction_service import TransactionService
 from app.services.whatsapp_service import WhatsAppService
 from app.services.otp_service import OTPService
-from app.agents.parser_agent import ParserAgent
-from app.agents.categorizer_agent import CategorizerAgent
-from app.agents.report_agent import ReportAgent
-from app.agents.organization_agent import OrganizationAgent
-from app.agents.context_agent import ContextAgent
-from app.agents.help_agent import HelpAgent
+# Legacy agents - now handled by tools-based MasterRouterAgent
+# from app.agents.parser_agent import ParserAgent
+# from app.agents.categorizer_agent import CategorizerAgent
+# from app.agents.report_agent import ReportAgent
+# from app.agents.organization_agent import OrganizationAgent
+# from app.agents.context_agent import ContextAgent
+# from app.agents.help_agent import HelpAgent
 from app.agents.master_router_agent import MasterRouterAgent
 from app.services.conversation_state import conversation_state
 from app.models.transaction import TransactionType
@@ -24,12 +25,13 @@ router = APIRouter(prefix="/whatsapp", tags=["whatsapp"])
 # Initialize services
 whatsapp_service = WhatsAppService()
 otp_service = OTPService()
-parser_agent = ParserAgent()
-categorizer_agent = CategorizerAgent()
-report_agent = ReportAgent()
-organization_agent = OrganizationAgent()
-context_agent = ContextAgent()
-help_agent = HelpAgent()
+# Legacy agent instances - now handled by tools-based architecture
+# parser_agent = ParserAgent()
+# categorizer_agent = CategorizerAgent()
+# report_agent = ReportAgent()
+# organization_agent = OrganizationAgent()
+# context_agent = ContextAgent()
+# help_agent = HelpAgent()
 master_router = MasterRouterAgent()
 
 @router.post("/webhook")
@@ -128,12 +130,7 @@ async def whatsapp_webhook(
             whatsapp_service.send_upgrade_prompt(From)
             return {"status": "limit_reached"}
         
-        # First, check if user is responding to a context question
-        pending_transaction = conversation_state.get_pending_transaction(str(user.id))
-        if pending_transaction:
-            return handle_context_response(From, message_body, user, pending_transaction, db)
-        
-        # Use Master Router for intelligent processing
+        # Use Master Router for ALL intelligent processing (handles pending transactions internally)
         try:
             print(f"🤖 Processing with MasterRouter: '{message_body}'")
             result = master_router.route_and_process(message_body, str(user.id), db)
@@ -160,34 +157,9 @@ async def whatsapp_webhook(
             import traceback
             print(f"❌ Traceback: {traceback.format_exc()}")
             
-            # Instead of falling back to transaction parsing, try direct report detection
-            message_lower = message_body.lower()
-            
-            # Check if it's clearly a report request
-            if any(word in message_lower for word in ["resumen", "reporte", "balance", "cuánto", "cuanto", "mis gastos", "total gastos", "gastos del", "como voy", "cómo voy"]):
-                print("🔄 Detected report request in fallback, routing to ReportAgent")
-                try:
-                    from app.agents.report_agent import ReportAgent
-                    
-                    report_agent = ReportAgent()
-                    currency_symbol = "₡" if user and user.currency == "CRC" else "$"
-                    
-                    result = report_agent.generate_report(message_body, str(user.id), db, currency_symbol)
-                    
-                    if result.get("success", False):
-                        whatsapp_service.send_message(From, result.get("report", "Reporte generado"))
-                        return {"status": "fallback_report_success"}
-                    else:
-                        whatsapp_service.send_message(From, "No pude generar el reporte en este momento.")
-                        return {"status": "fallback_report_failed"}
-                        
-                except Exception as report_error:
-                    print(f"❌ Error in fallback report: {report_error}")
-                    import traceback
-                    print(f"❌ Report error traceback: {traceback.format_exc()}")
-            
-            # If not a report, then fallback to transaction parsing
-            return handle_new_transaction(From, message_body, user, phone_number, db)
+            # Final fallback - simple error message (MasterRouter should handle everything)
+            whatsapp_service.send_message(From, "🤔 Ocurrió un error procesando tu mensaje. Intenta de nuevo o escribe 'ayuda'.")
+            return {"status": "final_fallback"}
         
     except Exception as e:
         print(f"Error processing WhatsApp message: {e}")
@@ -242,7 +214,8 @@ def test_message(phone_number: str, message: str):
         raise HTTPException(status_code=500, detail=f"Error: {str(e)}")
 
 
-def handle_new_transaction(from_number: str, message_body: str, user, phone_number: str, db: Session):
+# LEGACY FUNCTION - now handled by tools-based MasterRouterAgent  
+def handle_new_transaction_LEGACY(from_number: str, message_body: str, user, phone_number: str, db: Session):
     """Handle new transaction with intelligent context detection."""
     
     # Check if user has permission to create transactions (organization role check)  
@@ -301,7 +274,8 @@ def handle_new_transaction(from_number: str, message_body: str, user, phone_numb
     return {"status": "context_question_sent", "question": question}
 
 
-def handle_context_response(from_number: str, message_body: str, user, pending_transaction: dict, db: Session):
+# LEGACY FUNCTION - now handled by tools-based MasterRouterAgent
+def handle_context_response_LEGACY(from_number: str, message_body: str, user, pending_transaction: dict, db: Session):
     """Handle user's response to context selection question."""
     
     try:
