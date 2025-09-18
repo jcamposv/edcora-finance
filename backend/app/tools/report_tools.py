@@ -36,10 +36,13 @@ def get_transaction_data_tool(user_id: str, period: str, organization: str = Non
         
         # Get transactions based on organization filter
         if organization and organization.lower() in ["family", "familia", "familiar"]:
-            # Get family transactions
+            # Get family transactions (all organizations user belongs to)
             transactions = _get_family_transactions(db, user_id, start_date, end_date)
+        elif organization and organization.lower() == "personal":
+            # Get only personal transactions (not from organizations)
+            transactions = _get_personal_only_transactions(db, user_id, start_date, end_date)
         else:
-            # Get personal transactions
+            # Get all user transactions (personal + organizations)
             transactions = TransactionService.get_transactions_by_date_range(
                 db, user_id, start_date, end_date
             )
@@ -222,12 +225,19 @@ def detect_report_type_tool(message: str) -> str:
         
         # Detect organization filter
         organization = None
-        if any(word in message_lower for word in ["personal", "mío", "mio"]):
+        if any(word in message_lower for word in ["personal", "mío", "mio", "propio", "individual"]):
             organization = "personal"
-        elif any(word in message_lower for word in ["familia", "familiar", "family"]):
+        elif any(word in message_lower for word in ["familia", "familiar", "family", "mi hogar", "hogar", "casa"]):
             organization = "family"
-        elif any(word in message_lower for word in ["empresa", "trabajo", "work"]):
+        elif any(word in message_lower for word in ["empresa", "trabajo", "work", "negocio"]):
             organization = "empresa"
+        
+        # Detect specific organization names
+        organization_name = None
+        if "mi hogar" in message_lower:
+            organization_name = "Mi Hogar"
+        elif "hogar" in message_lower:
+            organization_name = "Hogar"
         
         # Detect report detail level
         report_type = "standard"
@@ -239,11 +249,13 @@ def detect_report_type_tool(message: str) -> str:
         result = {
             "period": period,
             "organization": organization,
+            "organization_name": organization_name,
             "report_type": report_type,
             "is_report_request": True
         }
         
-        return f"Tipo detectado: período={period}, organización={organization or 'ninguna'}, tipo={report_type}"
+        org_display = organization_name or organization or 'ninguna'
+        return f"Tipo detectado: período={period}, organización={org_display}, tipo={report_type}"
         
     except Exception as e:
         return f"Error detecting report type: {str(e)}"
@@ -283,6 +295,26 @@ def _get_date_range(period: str) -> tuple:
         # Default to this month
         first_day = today.replace(day=1)
         return first_day, today
+
+
+def _get_personal_only_transactions(db, user_id: str, start_date, end_date) -> List:
+    """Get only personal transactions (not from organizations)"""
+    try:
+        from app.services.transaction_service import TransactionService
+        
+        # Get user transactions and filter out organization transactions
+        all_transactions = TransactionService.get_transactions_by_date_range(
+            db, user_id, start_date, end_date
+        )
+        
+        # Filter to only personal transactions (organization_id is None)
+        personal_transactions = [t for t in all_transactions if t.organization_id is None]
+        
+        return personal_transactions
+        
+    except Exception as e:
+        print(f"Error getting personal transactions: {e}")
+        return []
 
 
 def _get_family_transactions(db, user_id: str, start_date, end_date) -> List:
