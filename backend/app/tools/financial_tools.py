@@ -404,14 +404,13 @@ def generate_report_tool(period: str, organization: str = None) -> str:
         return f"❌ Error generando reporte: {str(e)}"
 
 
-@tool("manage_organizations")
-def manage_organizations_tool(action: str, organization_name: Optional[str] = None) -> str:
-    """Manage user organizations, families, and groups.
-    Use this when user wants to 'crear familia', 'en qué familias estoy', 'listar organizaciones', etc."""
+@tool("list_organizations")
+def list_organizations_tool() -> str:
+    """List all organizations that the user belongs to.
+    Use this when user asks 'en qué familias estoy', 'mis organizaciones', 'lista organizaciones', etc."""
     
     try:
         from app.services.organization_service import OrganizationService
-        from app.services.user_service import UserService
         
         db = _current_db
         user_id = _current_user_id
@@ -419,42 +418,54 @@ def manage_organizations_tool(action: str, organization_name: Optional[str] = No
         if not db or not user_id:
             return "❌ Error: Database session or user ID not provided"
         
-        if action == "list":
-            # List user organizations
-            organizations = OrganizationService.get_user_organizations(db, user_id)
-            
-            if not organizations:
-                return "📝 No perteneces a ninguna organización aún.\n\n💡 Puedes crear una nueva familia diciendo:\n'Crear familia Mi Hogar'"
-            
-            org_list = []
-            for org in organizations:
-                org_type = org.type if hasattr(org, 'type') else "organization"
-                if hasattr(org_type, 'value'):
-                    org_type = org_type.value
-                emoji = "👨‍👩‍👧‍👦" if org_type == "family" else "🏢"
-                role_emoji = "👑" if str(org.owner_id) == str(user_id) else "👤"
-                org_list.append(f"{emoji} **{org.name}** {role_emoji}")
-            
-            return f"🏷️ **Tus organizaciones:**\n\n" + "\n".join(org_list)
+        # List user organizations
+        organizations = OrganizationService.get_user_organizations(db, user_id)
         
-        elif action == "create" and organization_name:
-            # Create new organization
-            from app.models.organization import OrganizationType
-            
-            organization = OrganizationService.create_organization(
-                db=db,
-                name=organization_name,
-                created_by=user_id,
-                organization_type=OrganizationType.family
-            )
-            
-            return f"✅ **Familia creada**\n\n👨‍👩‍👧‍👦 {organization_name}\n👑 Eres el administrador\n\n💡 Ahora puedes invitar miembros o registrar gastos familiares."
+        if not organizations:
+            return "📝 No perteneces a ninguna organización aún.\n\n💡 Puedes crear una nueva familia diciendo:\n'Crear familia Mi Hogar'"
         
-        else:
-            return "❌ Acción no válida. Usa 'list' para ver organizaciones o 'create' con un nombre para crear una nueva."
+        org_list = []
+        for org in organizations:
+            org_type = org.type if hasattr(org, 'type') else "organization"
+            if hasattr(org_type, 'value'):
+                org_type = org_type.value
+            emoji = "👨‍👩‍👧‍👦" if org_type == "family" else "🏢"
+            role_emoji = "👑" if str(org.owner_id) == str(user_id) else "👤"
+            org_list.append(f"{emoji} **{org.name}** {role_emoji}")
+        
+        return f"🏷️ **Tus organizaciones:**\n\n" + "\n".join(org_list)
             
     except Exception as e:
-        return f"❌ Error en gestión de organizaciones: {str(e)}"
+        return f"❌ Error al listar organizaciones: {str(e)}"
+
+
+@tool("create_organization")
+def create_organization_tool(organization_name: str) -> str:
+    """Create a new family organization.
+    Use this when user wants to create a new family like 'crear familia Mi Hogar'."""
+    
+    try:
+        from app.services.organization_service import OrganizationService
+        from app.models.organization import OrganizationType
+        
+        db = _current_db
+        user_id = _current_user_id
+        
+        if not db or not user_id:
+            return "❌ Error: Database session or user ID not provided"
+        
+        # Create new organization
+        organization = OrganizationService.create_organization(
+            db=db,
+            name=organization_name,
+            created_by=user_id,
+            organization_type=OrganizationType.family
+        )
+        
+        return f"✅ **Familia creada**\n\n👨‍👩‍👧‍👦 {organization_name}\n👑 Eres el administrador\n\n💡 Ahora puedes invitar miembros o registrar gastos familiares."
+            
+    except Exception as e:
+        return f"❌ Error al crear organización: {str(e)}"
 
 
 # Export tools for easy access

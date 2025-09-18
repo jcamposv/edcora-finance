@@ -7,7 +7,7 @@ from crewai import Agent, Task, Crew
 from typing import Dict, Any
 from sqlalchemy.orm import Session
 from app.core.llm_config import get_openai_config
-from app.tools.financial_tools import add_expense_tool, add_income_tool, generate_report_tool, manage_organizations_tool, set_tool_context
+from app.tools.financial_tools import add_expense_tool, add_income_tool, generate_report_tool, list_organizations_tool, create_organization_tool, set_tool_context
 from app.tools.report_tools import set_report_tool_context
 
 
@@ -29,7 +29,8 @@ class FinancialAgent:
                 add_expense_tool,
                 add_income_tool,
                 generate_report_tool,
-                manage_organizations_tool
+                list_organizations_tool,
+                create_organization_tool
             ]
             
             # Create agent with tools
@@ -56,11 +57,11 @@ EJEMPLOS DE USO DE HERRAMIENTAS:
 • "salario 150000" → usar add_income con amount=150000, description="salario"
 • "cobré 25000 freelance" → usar add_income con amount=25000, description="freelance"
 • "Resumen personal" → usar generate_report con period="este mes", organization="personal"
-• "En qué familias estoy" → usar manage_organizations con action="list"
-• "Lista de organizaciones" → usar manage_organizations con action="list"
-• "En cuales organizaciones estoy" → usar manage_organizations con action="list"
-• "Mis organizaciones" → usar manage_organizations con action="list"
-• "Crear familia Mi Hogar" → usar manage_organizations con action="create", organization_name="Mi Hogar"
+• "En qué familias estoy" → usar list_organizations
+• "Lista de organizaciones" → usar list_organizations
+• "En cuales organizaciones estoy" → usar list_organizations
+• "Mis organizaciones" → usar list_organizations
+• "Crear familia Mi Hogar" → usar create_organization con organization_name="Mi Hogar"
 
 IMPORTANTE: SIEMPRE usa las herramientas para ejecutar acciones. No intentes manejar lógica compleja manualmente.""",
                 verbose=True,
@@ -87,8 +88,8 @@ IMPORTANTE: SIEMPRE usa las herramientas para ejecutar acciones. No intentes man
                 1. Si es un GASTO/EXPENSE → usa add_expense (gasto, gasté, pagué, compré, etc.)
                 2. Si es un INGRESO/INCOME → usa add_income (ingreso, salario, cobré, recibí, gané, etc.)
                 3. Si es un reporte/resumen → usa generate_report  
-                4. Si es consulta de organizaciones → usa manage_organizations con action="list" (en qué familias, mis organizaciones, lista organizaciones)
-                5. Si es crear organización → usa manage_organizations con action="create"
+                4. Si es consulta de organizaciones → usa list_organizations (en qué familias, mis organizaciones, lista organizaciones)
+                5. Si es crear organización → usa create_organization
                 
                 INSTRUCCIONES ESPECÍFICAS:
                 • Extrae cantidades exactas (ej: "500", "40000")
@@ -101,9 +102,9 @@ IMPORTANTE: SIEMPRE usa las herramientas para ejecutar acciones. No intentes man
                 • "ingreso 60000 personal" → add_income(amount=60000, description="ingreso general", organization_context="personal")
                 • "salario 150000" → add_income(amount=150000, description="salario")
                 • "Resumen familia" → generate_report(period="este mes", organization="familia")
-                • "En qué familias estoy" → manage_organizations(action="list")
-                • "Lista de organizaciones" → manage_organizations(action="list")
-                • "Crear familia Nueva" → manage_organizations(action="create", organization_name="Nueva")
+                • "En qué familias estoy" → list_organizations()
+                • "Lista de organizaciones" → list_organizations()
+                • "Crear familia Nueva" → create_organization(organization_name="Nueva")
                 
                 Responde directamente con el resultado de la herramienta.
                 """,
@@ -184,7 +185,7 @@ IMPORTANTE: SIEMPRE usa las herramientas para ejecutar acciones. No intentes man
         # Check for organization patterns
         if any(word in message_lower for word in ["organizaciones", "familias", "lista", "qué familias", "en cuales", "mis organizaciones"]):
             try:
-                result = manage_organizations_tool(action="list")
+                result = list_organizations_tool()
                 
                 return {
                     "success": True,
