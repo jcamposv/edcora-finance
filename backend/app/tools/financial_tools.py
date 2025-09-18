@@ -469,7 +469,26 @@ def create_organization_tool(organization_name: str) -> str:
         if not db or not user_id:
             return "❌ Error: Database session or user ID not provided"
         
-        # Create new organization
+        # Check if user already has a family organization
+        user_organizations = OrganizationService.get_user_organizations(db, user_id)
+        existing_families = []
+        for org in user_organizations:
+            org_type = org.type if hasattr(org, 'type') else None
+            if hasattr(org_type, 'value'):
+                org_type = org_type.value
+            if org_type == "family" and str(org.owner_id) == str(user_id):
+                existing_families.append(org)
+        
+        if existing_families:
+            existing_names = [org.name for org in existing_families]
+            return f"❌ **Ya tienes una familia creada**\n\n👨‍👩‍👧‍👦 Familias existentes: {', '.join(existing_names)}\n\n💡 Solo puedes tener una familia por usuario. Usa la familia existente para registrar gastos familiares."
+        
+        # Check for duplicate name (case insensitive)
+        for org in user_organizations:
+            if org.name.lower() == organization_name.lower():
+                return f"❌ **Ya existe una organización con ese nombre**\n\n🏷️ '{org.name}' ya está en uso\n\n💡 Elige un nombre diferente para tu familia."
+        
+        # Create new family organization
         organization = OrganizationService.create_organization(
             db=db,
             name=organization_name,
@@ -477,10 +496,45 @@ def create_organization_tool(organization_name: str) -> str:
             organization_type=OrganizationType.family
         )
         
-        return f"✅ **Familia creada**\n\n👨‍👩‍👧‍👦 {organization_name}\n👑 Eres el administrador\n\n💡 Ahora puedes invitar miembros o registrar gastos familiares."
+        return f"✅ **Familia creada**\n\n👨‍👩‍👧‍👦 {organization_name}\n👑 Eres el administrador\n\n💡 Ahora puedes registrar gastos familiares escribiendo: 'Gasto 5000 almuerzo {organization_name}'"
             
     except Exception as e:
         return f"❌ Error al crear organización: {str(e)}"
+
+
+@tool("create_business")
+def create_business_tool(business_name: str) -> str:
+    """Create a new business organization.
+    Use this when user wants to create a business like 'crear empresa Mi Negocio'."""
+    
+    try:
+        from app.services.organization_service import OrganizationService
+        from app.models.organization import OrganizationType
+        
+        db = _current_db
+        user_id = _current_user_id
+        
+        if not db or not user_id:
+            return "❌ Error: Database session or user ID not provided"
+        
+        # Check for duplicate name (case insensitive)
+        user_organizations = OrganizationService.get_user_organizations(db, user_id)
+        for org in user_organizations:
+            if org.name.lower() == business_name.lower():
+                return f"❌ **Ya existe una organización con ese nombre**\n\n🏷️ '{org.name}' ya está en uso\n\n💡 Elige un nombre diferente para tu empresa."
+        
+        # Create new business organization
+        organization = OrganizationService.create_organization(
+            db=db,
+            name=business_name,
+            created_by=user_id,
+            organization_type=OrganizationType.business
+        )
+        
+        return f"✅ **Empresa creada**\n\n🏢 {business_name}\n👑 Eres el administrador\n\n💡 Puedes:\n• Registrar gastos: 'Gasto 5000 oficina {business_name}'\n• Invitar colaboradores (próximamente)"
+            
+    except Exception as e:
+        return f"❌ Error al crear empresa: {str(e)}"
 
 
 @tool("ask_family_name")
@@ -489,10 +543,18 @@ def ask_family_name_tool() -> str:
     return "👨‍👩‍👧‍👦 **¿Cómo quieres llamar a tu familia?**\n\nEjemplos:\n• 'Mi Hogar'\n• 'Familia Pérez'\n• 'Casa González'\n\n📝 Escribe el nombre de tu familia:"
 
 
+@tool("ask_business_name")
+def ask_business_name_tool() -> str:
+    """Ask the user for a business name when they say 'crear empresa' without specifying a name."""
+    return "🏢 **¿Cómo quieres llamar a tu empresa?**\n\nEjemplos:\n• 'Mi Negocio'\n• 'Consultora López'\n• 'Tienda García'\n\n📝 Escribe el nombre de tu empresa:"
+
+
 # Export tools for easy access
 AddExpenseTool = add_expense_tool
 AddIncomeTool = add_income_tool
 GenerateReportTool = generate_report_tool
 ListOrganizationsTool = list_organizations_tool
 CreateOrganizationTool = create_organization_tool
+CreateBusinessTool = create_business_tool
 AskFamilyNameTool = ask_family_name_tool
+AskBusinessNameTool = ask_business_name_tool

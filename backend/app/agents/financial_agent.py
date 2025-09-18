@@ -7,7 +7,7 @@ from crewai import Agent, Task, Crew
 from typing import Dict, Any
 from sqlalchemy.orm import Session
 from app.core.llm_config import get_openai_config
-from app.tools.financial_tools import add_expense_tool, add_income_tool, generate_report_tool, list_organizations_tool, create_organization_tool, ask_family_name_tool, set_tool_context
+from app.tools.financial_tools import add_expense_tool, add_income_tool, generate_report_tool, list_organizations_tool, create_organization_tool, create_business_tool, ask_family_name_tool, ask_business_name_tool, set_tool_context
 from app.tools.report_tools import set_report_tool_context
 
 
@@ -31,7 +31,9 @@ class FinancialAgent:
                 generate_report_tool,
                 list_organizations_tool,
                 create_organization_tool,
-                ask_family_name_tool
+                create_business_tool,
+                ask_family_name_tool,
+                ask_business_name_tool
             ]
             
             # Create agent with tools
@@ -64,6 +66,8 @@ EJEMPLOS DE USO DE HERRAMIENTAS:
 • "Mis organizaciones" → usar list_organizations
 • "Crear familia Mi Hogar" → usar create_organization con organization_name="Mi Hogar"
 • "Crear familia" (sin nombre) → usar ask_family_name
+• "Crear empresa Mi Negocio" → usar create_business con business_name="Mi Negocio"
+• "Crear empresa" (sin nombre) → usar ask_business_name
 
 IMPORTANTE: SIEMPRE usa las herramientas para ejecutar acciones. No intentes manejar lógica compleja manualmente.""",
                 verbose=True,
@@ -91,8 +95,10 @@ IMPORTANTE: SIEMPRE usa las herramientas para ejecutar acciones. No intentes man
                 2. Si es un INGRESO/INCOME → usa add_income (ingreso, salario, cobré, recibí, gané, etc.)
                 3. Si es un reporte/resumen → usa generate_report  
                 4. Si es consulta de organizaciones → usa list_organizations (en qué familias, mis organizaciones, lista organizaciones)
-                5. Si es crear organización CON nombre → usa create_organization
-                6. Si es crear organización SIN nombre → usa ask_family_name
+                5. Si es crear FAMILIA CON nombre → usa create_organization
+                6. Si es crear FAMILIA SIN nombre → usa ask_family_name
+                7. Si es crear EMPRESA CON nombre → usa create_business
+                8. Si es crear EMPRESA SIN nombre → usa ask_business_name
                 
                 INSTRUCCIONES ESPECÍFICAS:
                 • Extrae cantidades exactas (ej: "500", "40000")
@@ -109,6 +115,8 @@ IMPORTANTE: SIEMPRE usa las herramientas para ejecutar acciones. No intentes man
                 • "Lista de organizaciones" → list_organizations()
                 • "Crear familia Nueva" → create_organization(organization_name="Nueva")
                 • "Crear familia" → ask_family_name()
+                • "Crear empresa Tech Solutions" → create_business(business_name="Tech Solutions")
+                • "Crear empresa" → ask_business_name()
                 
                 Responde directamente con el resultado de la herramienta.
                 """,
