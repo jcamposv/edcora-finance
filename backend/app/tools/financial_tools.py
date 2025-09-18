@@ -470,5 +470,7 @@ def create_organization_tool(organization_name: str) -> str:
 
 # Export tools for easy access
 AddExpenseTool = add_expense_tool
+AddIncomeTool = add_income_tool
 GenerateReportTool = generate_report_tool
-OrganizationManagementTool = manage_organizations_tool
+ListOrganizationsTool = list_organizations_tool
+CreateOrganizationTool = create_organization_tool
