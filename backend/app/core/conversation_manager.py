@@ -344,6 +344,8 @@ class ConversationManager:
         has_description = data.get("description") is not None
         organization_context = data.get("organization_context")
         
+        print(f"🔍 DEBUG: Extracted data - amount: {data.get('amount')}, description: {data.get('description')}, org_context: '{organization_context}'")
+        
         # Determine target organization
         target_organization = None
         needs_org_clarification = False
@@ -356,20 +358,26 @@ class ConversationManager:
                 data["organization_name"] = "Personal"
                 # Skip organization clarification for personal requests
                 needs_org_clarification = False
+                print(f"🔍 DEBUG: Detected personal request, setting organization_id=None")
             elif user_organizations:
                 # Try to match mentioned organization
                 for org in user_organizations:
                     if organization_context.lower() in org.name.lower():
                         target_organization = org
+                        print(f"🔍 DEBUG: Matched organization: {org.name}")
                         break
         
         # Check if we need to ask for organization (only if not already decided)
         if len(user_organizations) > 0:  # User has at least one organization
             if not organization_context:  # No organization mentioned at all
                 needs_org_clarification = True
+                print(f"🔍 DEBUG: No org context, needs clarification")
             elif organization_context and not target_organization and organization_context.lower() not in ["personal", "mío", "mio", "propio"]:
                 # Organization mentioned but not found
                 needs_org_clarification = True
+                print(f"🔍 DEBUG: Org context '{organization_context}' not found, needs clarification")
+            else:
+                print(f"🔍 DEBUG: Org context resolved, needs_clarification={needs_org_clarification}")
         
         # If we have everything and organization is clear, create the expense
         if has_amount and has_description and not needs_org_clarification:
@@ -786,6 +794,8 @@ class ConversationManager:
             # Get organization ID if specified
             organization_id = data.get('organization_id')
             organization_name = data.get('organization_name', 'Personal')
+            
+            print(f"🔍 DEBUG: Creating expense with org_id='{organization_id}', org_name='{organization_name}'")
             
             transaction_data = TransactionCreate(
                 user_id=user_id,

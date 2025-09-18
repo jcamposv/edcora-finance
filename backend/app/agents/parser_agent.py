@@ -61,13 +61,18 @@ Siempre respondes JSON preciso y estructurado.""",
             1. AMOUNT: Número exacto del monto (sin símbolos, solo número)
             2. TYPE: income o expense (default: expense)
             3. DESCRIPTION: Descripción limpia del gasto/ingreso
-            4. ORGANIZATION_CONTEXT: Contexto mencionado (familia, empresa, trabajo, etc.) o null
+            4. ORGANIZATION_CONTEXT: Contexto mencionado - MUY IMPORTANTE:
+               - Si menciona "personal" en cualquier forma → "personal"
+               - Si menciona "familia", "empresa", "trabajo" → usar esa palabra
+               - Si no menciona contexto → null
             5. CATEGORY: Categoría inferida (Gasolina, Comida, Entretenimiento, etc.)
             
             EJEMPLOS DE ANÁLISIS:
             - "Gasto familia gasolina 40000" → amount: 40000, type: expense, description: "gasolina", organization_context: "familia", category: "Gasolina"
+            - "Gaste 2000 en comida personal" → amount: 2000, type: expense, description: "comida", organization_context: "personal", category: "Comida"
+            - "Gasto personal 2000" → amount: 2000, type: expense, description: "gasto general", organization_context: "personal", category: "General"
             - "Compré almuerzo 5000" → amount: 5000, type: expense, description: "almuerzo", organization_context: null, category: "Comida"
-            - "Pago empresa 25000" → amount: 25000, type: expense, description: "pago empresa", organization_context: "empresa", category: "Empresa"
+            - "Pago empresa 25000" → amount: 25000, type: expense, description: "pago", organization_context: "empresa", category: "Empresa"
             - "Ingreso salario 500000" → amount: 500000, type: income, description: "salario", organization_context: null, category: "Salario"
             - "Gasto 40000" → amount: 40000, type: expense, description: "gasto general", organization_context: null, category: "General"
             
@@ -156,6 +161,8 @@ Siempre respondes JSON preciso y estructurado.""",
                 description = parsed_json.get("description", original_message)
                 organization_context = parsed_json.get("organization_context")
                 category = parsed_json.get("category", "General")
+                
+                print(f"🧠 AI PARSED: amount={amount}, description='{description}', org_context='{organization_context}', category='{category}'")
                 
                 return {
                     "amount": amount,
