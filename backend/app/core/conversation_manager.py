@@ -100,7 +100,7 @@ class ConversationManager:
         org_context = ""
         if user_organizations:
             org_names = [org.name for org in user_organizations]
-            org_context = f"El usuario pertenece a estas organizaciones: {', '.join(org_names)}"
+            org_context = f"El usuario pertenece a estas organizaciones: {', '.join(org_names)}. IMPORTANTE: NO asumir que el gasto va a ninguna organización específica a menos que se mencione explícitamente."
         
         task = Task(
             description=f"""
@@ -162,6 +162,8 @@ class ConversationManager:
         try:
             crew = Crew(agents=[self.intelligent_agent], tasks=[task])
             result = str(crew.kickoff()).strip()
+            
+            print(f"🧠 ConversationManager AI Raw Result: {result}")
             
             # Parse AI response
             import re
