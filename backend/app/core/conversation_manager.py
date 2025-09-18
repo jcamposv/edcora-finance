@@ -378,6 +378,8 @@ NUNCA inventes información que no esté en el mensaje.""",
     def _start_expense_addition(self, intent: Dict, message: str, user_id: str, db: Session, context: ConversationContext) -> Dict[str, Any]:
         """Start expense addition flow with organization context"""
         data = intent["extracted_data"]
+        # Ensure transaction type is included
+        data["type"] = "expense"  # Default to expense for add_expense intent
         
         # Get user organizations
         from app.services.organization_service import OrganizationService
@@ -1012,11 +1014,21 @@ NUNCA inventes información que no esté en el mensaje.""",
             organization_id = data.get('organization_id')
             organization_name = data.get('organization_name', 'Personal')
             
-            print(f"🔍 DEBUG: Creating expense with org_id='{organization_id}', org_name='{organization_name}'")
+            # Convert organization_id to UUID if it's a string
+            org_uuid = None
+            if organization_id and organization_id != "null":
+                try:
+                    from uuid import UUID
+                    org_uuid = UUID(organization_id) if isinstance(organization_id, str) else organization_id
+                except ValueError:
+                    print(f"⚠️ Invalid organization_id format: {organization_id}")
+                    org_uuid = None
+            
+            print(f"🔍 DEBUG: Creating expense with org_id='{org_uuid}', org_name='{organization_name}'")
             
             transaction_data = TransactionCreate(
-                user_id=user_id,
-                organization_id=organization_id,
+                user_id=UUID(user_id) if isinstance(user_id, str) else user_id,
+                organization_id=org_uuid,
                 amount=float(data['amount']),
                 type=TransactionType.expense,
                 category=category,
