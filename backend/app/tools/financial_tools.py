@@ -405,7 +405,7 @@ def generate_report_tool(period: str, organization: str = None) -> str:
 
 
 @tool("manage_organizations")
-def manage_organizations_tool(action: str, organization_name: str = None) -> str:
+def manage_organizations_tool(action: str, organization_name: Optional[str] = None) -> str:
     """Manage user organizations, families, and groups.
     Use this when user wants to 'crear familia', 'en qué familias estoy', 'listar organizaciones', etc."""
     
