@@ -73,8 +73,12 @@ NUNCA inventes información que no esté en el mensaje.""",
         # CRITICAL: If we're in a conversation flow, prioritize continuing it
         # Don't let new intent detection override ongoing conversations
         if context.current_flow != "none":
-            # Force continuation unless it's a very clear new intent
-            if message_intent["confidence"] < 0.9 or message_intent["type"] in ["help", "unknown"]:
+            # Force continuation unless it's a very clear new intent with high confidence
+            if (message_intent["confidence"] < 0.95 or 
+                message_intent["type"] in ["help", "unknown"] or
+                len(message.strip()) < 10):  # Short messages likely continuations
+                
+                print(f"🔄 FORCING CONTINUATION: current_flow={context.current_flow}, confidence={message_intent.get('confidence')}, message='{message[:20]}...'")
                 message_intent["is_new_flow"] = False
                 message_intent["type"] = "continuation"
         
@@ -470,9 +474,12 @@ NUNCA inventes información que no esté en el mensaje.""",
     def _handle_ongoing_conversation(self, intent: Dict, message: str, user_id: str, db: Session, context: ConversationContext) -> Dict[str, Any]:
         """Handle continuation of ongoing conversation"""
         
-        # Check if user wants to start something new
-        if intent["is_new_flow"] and intent["confidence"] > 0.8:
+        print(f"🔄 CONTINUING CONVERSATION: flow={context.current_flow}, message='{message}', is_new_flow={intent.get('is_new_flow')}")
+        
+        # Check if user wants to start something new (with very high confidence)
+        if intent["is_new_flow"] and intent["confidence"] > 0.95:
             # Reset context and start new flow
+            print(f"🔄 HIGH CONFIDENCE NEW FLOW: resetting context")
             context.current_flow = "none"
             context.flow_data = {}
             return self._handle_new_conversation(intent, message, user_id, db, context)
@@ -535,9 +542,11 @@ NUNCA inventes información que no esté en el mensaje.""",
         
         # Handle organization selection if needed
         if data.get("amount") and data.get("description") and not data.get("organization_id"):
-            if len(user_organizations) > 1:  # User has multiple organizations
+            if len(user_organizations) >= 1:  # User has organizations (changed from > 1)
                 # Try intelligent parsing first
+                print(f"🔄 TRYING ORG SELECTION: message='{message}', orgs={len(user_organizations)}")
                 org_selection = self._intelligent_organization_selection(message, user_organizations, user_id, db)
+                print(f"🔄 ORG SELECTION RESULT: {org_selection}")
                 if org_selection:
                     data["organization_id"] = org_selection.get("organization_id")
                     data["organization_name"] = org_selection.get("organization_name")
@@ -602,38 +611,51 @@ NUNCA inventes información que no esté en el mensaje.""",
         """Parse user's organization selection response"""
         message_lower = message.lower().strip()
         
+        print(f"🔍 PARSING ORG SELECTION: message='{message_lower}', orgs={len(user_organizations)}")
+        
         # Try numeric selection first
         try:
             selection_num = int(message_lower)
+            print(f"🔍 NUMERIC SELECTION: {selection_num}")
             if 1 <= selection_num <= len(user_organizations):
                 org = user_organizations[selection_num - 1]
-                return {
+                result = {
                     "organization_id": org["id"],
                     "organization_name": org["name"]
                 }
-            elif selection_num == len(user_organizations) + 1:
+                print(f"🔍 MATCHED ORG: {result}")
+                return result
+            elif selection_num == len(user_organizations) + 1 or selection_num == 2:  # Added 2 for Personal
                 # Personal selection
-                return {
+                result = {
                     "organization_id": None,
                     "organization_name": "Personal"
                 }
+                print(f"🔍 MATCHED PERSONAL: {result}")
+                return result
         except ValueError:
             pass
         
-        # Try name matching
-        if "personal" in message_lower:
-            return {
+        # Try exact personal matching (most important)
+        if message_lower in ["personal", "2"]:
+            result = {
                 "organization_id": None,
                 "organization_name": "Personal"
             }
+            print(f"🔍 EXACT PERSONAL MATCH: {result}")
+            return result
         
+        # Try name matching
         for org in user_organizations:
-            if org["name"].lower() in message_lower:
-                return {
+            if org["name"].lower() in message_lower or message_lower in org["name"].lower():
+                result = {
                     "organization_id": org["id"],
                     "organization_name": org["name"]
                 }
+                print(f"🔍 NAME MATCH: {result}")
+                return result
         
+        print(f"🔍 NO MATCH FOUND")
         return None
     
     def _intelligent_organization_selection(self, message: str, user_organizations: List, user_id: str, db: Session) -> Optional[Dict]:
