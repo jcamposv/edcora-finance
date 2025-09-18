@@ -120,11 +120,16 @@ class MasterRouterAgent:
                 if transaction_data.get("organization_id"):
                     org_uuid = UUID(transaction_data["organization_id"]) if isinstance(transaction_data["organization_id"], str) else transaction_data["organization_id"]
                 
+                # Determine transaction type
+                transaction_type = TransactionType.expense  # default
+                if transaction_data.get("type") == "income":
+                    transaction_type = TransactionType.income
+                
                 transaction_create = TransactionCreate(
                     user_id=UUID(user_id) if isinstance(user_id, str) else user_id,
                     organization_id=org_uuid,
                     amount=Decimal(str(transaction_data["amount"])),
-                    type=TransactionType.expense,
+                    type=transaction_type,
                     category="General",  # Will be categorized automatically by service
                     description=transaction_data["description"]
                 )
@@ -134,10 +139,20 @@ class MasterRouterAgent:
                 currency = "₡" if user and user.currency == "CRC" else "$"
                 org_name = transaction_data.get("organization_name", "Personal")
                 
+                # Dynamic message based on transaction type
+                if transaction_type == TransactionType.income:
+                    emoji = "💰"
+                    action_text = "Ingreso registrado"
+                    action_code = "income_created"
+                else:
+                    emoji = "💸"
+                    action_text = "Gasto registrado"
+                    action_code = "expense_created"
+                
                 return {
                     "success": True,
-                    "message": f"✅ **Gasto registrado**\n\n💸 {currency}{transaction_data['amount']:,.0f} en {transaction_data['description']}\n🏷️ Organización: {org_name}\n📅 {transaction.date.strftime('%d/%m/%Y')}",
-                    "action": "expense_created"
+                    "message": f"✅ **{action_text}**\n\n{emoji} {currency}{transaction_data['amount']:,.0f} en {transaction_data['description']}\n🏷️ Organización: {org_name}\n📅 {transaction.date.strftime('%d/%m/%Y')}",
+                    "action": action_code
                 }
                 
             except Exception as e:
