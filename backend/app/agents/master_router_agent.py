@@ -98,10 +98,11 @@ class MasterRouterAgent:
             # Update transaction data with organization
             transaction_data.update(org_selection)
             
-            # Create the expense using AddExpenseTool
-            from app.tools.financial_tools import AddExpenseTool
+            # Create the expense using add_expense_tool
+            from app.tools.financial_tools import add_expense_tool, set_tool_context
             
-            add_expense_tool = AddExpenseTool(db=db, user_id=user_id)
+            # Set context for the tool
+            set_tool_context(db, user_id)
             
             # Create transaction directly since we have all data
             try:
@@ -124,7 +125,7 @@ class MasterRouterAgent:
                     organization_id=org_uuid,
                     amount=Decimal(str(transaction_data["amount"])),
                     type=TransactionType.expense,
-                    category=add_expense_tool._categorize_expense(transaction_data["description"]),
+                    category="General",  # Will be categorized automatically by service
                     description=transaction_data["description"]
                 )
                 

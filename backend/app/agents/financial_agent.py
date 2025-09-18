@@ -145,8 +145,7 @@ IMPORTANTE: SIEMPRE usa las herramientas para ejecutar acciones. No intentes man
                         description = "gasto general"
                     
                     # Use tool directly
-                    add_expense_tool = AddExpenseTool(db=self.db, user_id=self.user_id)
-                    result = add_expense_tool._run(amount=amount, description=description)
+                    result = add_expense_tool(amount=amount, description=description)
                     
                     return {
                         "success": True,
@@ -159,8 +158,7 @@ IMPORTANTE: SIEMPRE usa las herramientas para ejecutar acciones. No intentes man
         # Check for report patterns
         if any(word in message_lower for word in ["resumen", "reporte", "balance", "gastos"]):
             try:
-                report_tool = GenerateReportTool(db=self.db, user_id=self.user_id)
-                result = report_tool._run(period="este mes", organization=None)
+                result = generate_report_tool(period="este mes", organization=None)
                 
                 return {
                     "success": True,

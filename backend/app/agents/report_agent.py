@@ -99,9 +99,11 @@ NUNCA inventes datos. SIEMPRE usa las herramientas para obtener información rea
                 # Update agent tools
                 self.agent.tools = self.tools
         
+        # Get transactions data first
+        transactions_data = self._get_transactions_data(user_id, db, message)
+        
         if not self.has_openai or not self.agent:
             # Fallback without AI
-            transactions_data = self._get_transactions_data(user_id, db, message)
             return self._generate_simple_report(transactions_data, currency_symbol, message)
         
         try:
