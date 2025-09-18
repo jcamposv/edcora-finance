@@ -50,17 +50,73 @@ def add_expense_tool(amount: float, description: str, organization_context: str 
         organization_name = "Personal"
         
         if organization_context:
-            # Handle explicit organization context
-            if organization_context.lower() in ["personal", "mío", "mio", "propio"]:
+            context_lower = organization_context.lower().strip()
+            
+            # Handle explicit "personal" keywords
+            if context_lower in ["personal", "mío", "mio", "propio"]:
                 target_organization_id = None
                 organization_name = "Personal"
             else:
-                # Try to match organization by name
+                # Search user's organizations by name or type (same logic as income)
+                found_org = None
+                
+                # First, try exact name match (case insensitive)
                 for org in user_organizations:
-                    if organization_context.lower() in org.name.lower():
-                        target_organization_id = org.id
-                        organization_name = org.name
+                    if org.name.lower() == context_lower:
+                        found_org = org
                         break
+                
+                # If not found, try partial name match
+                if not found_org:
+                    for org in user_organizations:
+                        if context_lower in org.name.lower() or org.name.lower() in context_lower:
+                            found_org = org
+                            break
+                
+                # If still not found, try by type
+                if not found_org:
+                    if context_lower in ["familia", "familiar", "family"]:
+                        # Look for family type organization
+                        family_orgs = [org for org in user_organizations if org.type == "family"]
+                        if family_orgs:
+                            found_org = family_orgs[0]  # Take first family org
+                
+                if found_org:
+                    target_organization_id = found_org.id
+                    organization_name = found_org.name
+                else:
+                    # Organization not found - ask user to choose
+                    if user_organizations:
+                        available_contexts = []
+                        for org in user_organizations:
+                            org_type = org.type if hasattr(org, 'type') else "organization"
+                            available_contexts.append({
+                                "id": str(org.id),
+                                "name": org.name,
+                                "type": org_type
+                            })
+                        
+                        # Store pending transaction for organization selection
+                        from app.services.conversation_state import conversation_state
+                        conversation_state.set_pending_transaction(user_id, {
+                            "transaction_data": {
+                                "amount": amount,
+                                "description": description,
+                                "type": "expense"
+                            },
+                            "available_contexts": available_contexts
+                        })
+                        
+                        # Build organization options
+                        org_options = []
+                        for i, org in enumerate(available_contexts, 1):
+                            emoji = "👨‍👩‍👧‍👦" if org["type"] == "family" else "🏢"
+                            org_options.append(f"{i}. {emoji} {org['name']}")
+                        
+                        org_list = "\n".join(org_options)
+                        personal_option = f"{len(available_contexts) + 1}. 👤 Personal"
+                        
+                        return f"🤔 No encontré la organización '{organization_context}'\n\n🏷️ **¿Dónde registrar el gasto?**\n\n{org_list}\n{personal_option}\n\n📝 Responde con el número:"
         
         # If no explicit context and user has organizations, need clarification
         if not organization_context and len(user_organizations) > 0:
@@ -151,25 +207,79 @@ def add_income_tool(amount: float, description: str, organization_context: str =
         organization_name = "Personal"
         
         if organization_context:
-            context_lower = organization_context.lower()
+            context_lower = organization_context.lower().strip()
+            
+            # Handle explicit "personal" keywords
             if context_lower in ["personal", "mío", "mio", "propio"]:
                 target_organization_id = None
                 organization_name = "Personal"
-            elif context_lower in ["familia", "familiar", "family", "hogar"]:
-                if user_organizations:
-                    family_org = next((org for org in user_organizations if org.name.lower() in ["familia", "mi hogar", "hogar"]), None)
-                    if family_org:
-                        target_organization_id = family_org.id
-                        organization_name = family_org.name
-                    else:
-                        target_organization_id = user_organizations[0].id
-                        organization_name = user_organizations[0].name
+            else:
+                # Search user's organizations by name or type
+                found_org = None
+                
+                # First, try exact name match (case insensitive)
+                for org in user_organizations:
+                    if org.name.lower() == context_lower:
+                        found_org = org
+                        break
+                
+                # If not found, try partial name match
+                if not found_org:
+                    for org in user_organizations:
+                        if context_lower in org.name.lower() or org.name.lower() in context_lower:
+                            found_org = org
+                            break
+                
+                # If still not found, try by type
+                if not found_org:
+                    if context_lower in ["familia", "familiar", "family"]:
+                        # Look for family type organization
+                        family_orgs = [org for org in user_organizations if org.type == "family"]
+                        if family_orgs:
+                            found_org = family_orgs[0]  # Take first family org
+                
+                if found_org:
+                    target_organization_id = found_org.id
+                    organization_name = found_org.name
+                else:
+                    # Organization not found - ask user to choose
+                    if user_organizations:
+                        available_contexts = []
+                        for org in user_organizations:
+                            org_type = org.type if hasattr(org, 'type') else "organization"
+                            available_contexts.append({
+                                "id": str(org.id),
+                                "name": org.name,
+                                "type": org_type
+                            })
+                        
+                        # Store pending transaction for organization selection
+                        from app.services.conversation_state import conversation_state
+                        conversation_state.set_pending_transaction(user_id, {
+                            "transaction_data": {
+                                "amount": amount,
+                                "description": description,
+                                "type": "income"
+                            },
+                            "available_contexts": available_contexts
+                        })
+                        
+                        # Build organization options
+                        org_options = []
+                        for i, org in enumerate(available_contexts, 1):
+                            emoji = "👨‍👩‍👧‍👦" if org["type"] == "family" else "🏢"
+                            org_options.append(f"{i}. {emoji} {org['name']}")
+                        
+                        org_list = "\n".join(org_options)
+                        personal_option = f"{len(available_contexts) + 1}. 👤 Personal"
+                        
+                        return f"🤔 No encontré la organización '{organization_context}'\n\n🏷️ **¿Dónde registrar el ingreso?**\n\n{org_list}\n{personal_option}\n\n📝 Responde con el número:"
         else:
             # No organization context provided - need to ask user
             if user_organizations:
                 available_contexts = []
                 for org in user_organizations:
-                    org_type = "family" if org.name.lower() in ["familia", "mi hogar", "hogar"] else "organization"
+                    org_type = org.type if hasattr(org, 'type') else "organization"
                     available_contexts.append({
                         "id": str(org.id),
                         "name": org.name,
@@ -246,6 +356,28 @@ def generate_report_tool(period: str, organization: str = None) -> str:
         
         if not db or not user_id:
             return "❌ Error: Database session or user ID not provided"
+        
+        # Check if user has organizations and no organization specified
+        if not organization:
+            from app.services.organization_service import OrganizationService
+            user_organizations = OrganizationService.get_user_organizations(db, user_id)
+            
+            if user_organizations:
+                # Ask user which type of report they want
+                org_options = []
+                org_options.append("1. 👤 Personal")
+                
+                family_orgs = [org for org in user_organizations if org.type == "family"]
+                if family_orgs:
+                    org_options.append("2. 👨‍👩‍👧‍👦 Familia")
+                
+                # Add specific organizations
+                for i, org in enumerate(user_organizations, 3):
+                    emoji = "👨‍👩‍👧‍👦" if org.type == "family" else "🏢"
+                    org_options.append(f"{i}. {emoji} {org.name}")
+                
+                org_list = "\n".join(org_options)
+                return f"📊 **¿Qué tipo de resumen quieres?**\n\n{org_list}\n\n📝 Responde con el número o tipo:"
         
         # Construct query message
         query_parts = ["resumen"]
