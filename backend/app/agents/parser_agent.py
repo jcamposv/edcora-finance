@@ -99,6 +99,7 @@ Siempre respondes JSON preciso y estructurado.""",
         crew = Crew(
             agents=[self.agent],
             tasks=[task],
+            memory=True,  # 🧠 Enable memory for parsing context
             verbose=True
         )
         

@@ -113,6 +113,7 @@ Siempre motivas al usuario a mejorar sus finanzas.""",
             crew = Crew(
                 agents=[self.agent],
                 tasks=[task],
+                memory=True,  # 🧠 Enable memory for report context
                 verbose=False
             )
             

@@ -121,68 +121,72 @@ NUNCA inventes información que no esté en el mensaje.""",
             return self._regex_analyze_intent(message, context)
     
     def _ai_analyze_intent(self, message: str, context: ConversationContext, user_organizations: List = None) -> Dict[str, Any]:
-        """Use AI to analyze message intent and extract data intelligently"""
+        """Use AI to analyze message intent and extract data intelligently with CrewAI Memory"""
         
         org_context = ""
         if user_organizations:
             org_names = [org.name for org in user_organizations]
             org_context = f"El usuario pertenece a estas organizaciones: {', '.join(org_names)}. IMPORTANTE: NO asumir que el gasto va a ninguna organización específica a menos que se mencione explícitamente."
         
+        # Add conversation context for CrewAI Memory
+        conversation_context = ""
+        if context.current_flow != "none":
+            conversation_context = f"\n🧠 CONTEXT MEMORY: El usuario está en flujo '{context.current_flow}'. Sus datos pendientes: {context.flow_data}"
+        
         task = Task(
             description=f"""
-            TAREA SIMPLE: Clasifica este mensaje financiero.
+            TAREA: Clasifica este mensaje financiero con contexto de memoria.
             
             MENSAJE: "{message}"
-            CONTEXTO: {org_context}
+            ORGANIZACIONES DISPONIBLES: {org_context}
+            {conversation_context}
             
-            REGLAS ESTRICTAS:
-            1. Si contiene "gasto/gasté/compré/pago" + número → add_expense
-            2. Si contiene "presupuesto" → create_budget
-            3. Si contiene "resumen/reporte" → view_report  
-            4. Si es respuesta corta (1-2 palabras) → unknown
-            5. organization_context = null SIEMPRE (a menos que diga explícitamente "personal/familia/empresa")
+            🧠 MEMORIA ACTIVA: Usa el contexto de conversaciones anteriores para entender continuidad.
+            
+            REGLAS CRÍTICAS:
+            1. Si hay contexto de flujo, considera que es continuación
+            2. "gasto/gasté/compré" + número → add_expense
+            3. "presupuesto" → create_budget
+            4. "resumen/reporte" → view_report
+            5. organization_context = null (excepto si explícito: "personal/familia/empresa")
             
             DATOS A EXTRAER:
-            - amount: solo números del mensaje
-            - description: texto sin números
-            - organization_context: null (excepto si explícito)
+            - amount: números del mensaje
+            - description: texto descriptivo
+            - organization_context: null (excepto si mencionado explícitamente)
             
-            REGLA CRÍTICA: organization_context SOLO debe tener valor si se menciona explícitamente.
+            EJEMPLOS CON MEMORIA:
+            - Primera vez: "Gasto 4000 comida" → add_expense (nuevo flujo)
+            - Con contexto: "personal" → unknown (continuación de selección)
+            - "Gasto familia gasolina 40000" → add_expense, organization_context: "familia"
+            - "Compré almuerzo 5000" → add_expense, organization_context: null
             
-            EJEMPLOS:
-            - "Gasto familia gasolina 40000" → add_expense, amount: 40000, description: "gasolina", organization_context: "familia"
-            - "Compré almuerzo 5000" → add_expense, amount: 5000, description: "almuerzo", organization_context: null
-            - "Gasto 40000" → add_expense, amount: 40000, description: null, organization_context: null
-            - "Almuerzo" → unknown, organization_context: null (NO ASUMIR ORGANIZACION)
-            - "Gasto 3000" → add_expense, amount: 3000, description: null, organization_context: null (NO ASUMIR)
-            - "Gaste 5000 en almuerzo" → add_expense, amount: 5000, description: "almuerzo", organization_context: null (NO MENCIONA ORG)
-            - "Gasto 5000 gasolina quiero ingresarlo a personal" → add_expense, amount: 5000, description: "gasolina", organization_context: "personal"
-            - "Personal" → unknown (respuesta de selección, no crear organización)
-            - "Crear presupuesto comida" → create_budget, category: "Comida"
-            - "Crear familia Mi Hogar" → create_organization
-            - "En qué familias estoy" → list_organizations
-            - "Gestionar gastos" → manage_transactions
-            
-            RESPONDE JSON CON TRANSPARENCIA:
+            RESPONDE JSON:
             {{
                 "type": "tipo_de_accion",
                 "confidence": 0.9,
-                "is_new_flow": true,
-                "reasoning": "Breve explicación de por qué este intent",
+                "is_new_flow": true_o_false,
+                "reasoning": "Explicación considerando memoria",
                 "extracted_data": {{
                     "amount": numero_o_null,
                     "description": "texto_o_null",
-                    "organization_context": "nombre_org_o_null",
+                    "organization_context": "org_o_null",
                     "category": "categoria_o_null"
                 }}
             }}
             """,
             agent=self.intelligent_agent,
-            expected_output="JSON con análisis completo del mensaje"
+            expected_output="JSON con análisis completo considerando memoria de conversación"
         )
         
         try:
-            crew = Crew(agents=[self.intelligent_agent], tasks=[task])
+            # Enable CrewAI Memory for conversation continuity
+            crew = Crew(
+                agents=[self.intelligent_agent], 
+                tasks=[task],
+                memory=True,  # 🧠 Enable short-term, long-term, and entity memory
+                verbose=True
+            )
             result = str(crew.kickoff()).strip()
             
             print(f"🧠 ConversationManager AI Raw Result: {result}")
@@ -774,7 +778,13 @@ NUNCA inventes información que no esté en el mensaje.""",
                 expected_output="JSON con la selección de organización parseada"
             )
             
-            crew = Crew(agents=[self.intelligent_agent], tasks=[task])
+            # Enable CrewAI Memory for organization selection context
+            crew = Crew(
+                agents=[self.intelligent_agent], 
+                tasks=[task],
+                memory=True,  # 🧠 Remember organization selection context
+                verbose=False
+            )
             result = str(crew.kickoff()).strip()
             
             # Parse AI response
