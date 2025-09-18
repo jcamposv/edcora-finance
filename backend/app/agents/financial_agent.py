@@ -7,7 +7,7 @@ from crewai import Agent, Task, Crew
 from typing import Dict, Any
 from sqlalchemy.orm import Session
 from app.core.llm_config import get_openai_config
-from app.tools.financial_tools import add_expense_tool, generate_report_tool, manage_organizations_tool, set_tool_context
+from app.tools.financial_tools import add_expense_tool, add_income_tool, generate_report_tool, manage_organizations_tool, set_tool_context
 from app.tools.report_tools import set_report_tool_context
 
 
@@ -27,6 +27,7 @@ class FinancialAgent:
             # Initialize tools
             self.tools = [
                 add_expense_tool,
+                add_income_tool,
                 generate_report_tool,
                 manage_organizations_tool
             ]
@@ -50,7 +51,10 @@ PRINCIPIOS CORE:
 
 EJEMPLOS DE USO DE HERRAMIENTAS:
 • "Gasto 500 almuerzo" → usar add_expense con amount=500, description="almuerzo"
-• "Gasté 40000 gasolina familia" → usar add_expense con amount=40000, description="gasolina", organization_context="familia"  
+• "Gasté 40000 gasolina familia" → usar add_expense con amount=40000, description="gasolina", organization_context="familia"
+• "ingreso 60000 personal" → usar add_income con amount=60000, description="ingreso general", organization_context="personal"
+• "salario 150000" → usar add_income con amount=150000, description="salario"
+• "cobré 25000 freelance" → usar add_income con amount=25000, description="freelance"
 • "Resumen personal" → usar generate_report con period="este mes", organization="personal"
 • "En qué familias estoy" → usar manage_organizations con action="list"
 • "Crear familia Mi Hogar" → usar manage_organizations con action="create", organization_name="Mi Hogar"
@@ -77,9 +81,10 @@ IMPORTANTE: SIEMPRE usa las herramientas para ejecutar acciones. No intentes man
                 
                 Analiza el mensaje y usa la herramienta apropiada:
                 
-                1. Si es un gasto/expense → usa add_expense
-                2. Si es un reporte/resumen → usa generate_report  
-                3. Si es gestión de organizaciones → usa manage_organizations
+                1. Si es un GASTO/EXPENSE → usa add_expense (gasto, gasté, pagué, compré, etc.)
+                2. Si es un INGRESO/INCOME → usa add_income (ingreso, salario, cobré, recibí, gané, etc.)
+                3. Si es un reporte/resumen → usa generate_report  
+                4. Si es gestión de organizaciones → usa manage_organizations
                 
                 INSTRUCCIONES ESPECÍFICAS:
                 • Extrae cantidades exactas (ej: "500", "40000")
@@ -89,6 +94,8 @@ IMPORTANTE: SIEMPRE usa las herramientas para ejecutar acciones. No intentes man
                 
                 EJEMPLOS:
                 • "Gasto 500 almuerzo" → add_expense(amount=500, description="almuerzo")
+                • "ingreso 60000 personal" → add_income(amount=60000, description="ingreso general", organization_context="personal")
+                • "salario 150000" → add_income(amount=150000, description="salario")
                 • "Resumen familia" → generate_report(period="este mes", organization="familia")
                 • "Crear familia Nueva" → manage_organizations(action="create", organization_name="Nueva")
                 

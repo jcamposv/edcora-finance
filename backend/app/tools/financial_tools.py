@@ -122,6 +122,117 @@ def add_expense_tool(amount: float, description: str, organization_context: str 
         return f"❌ Error al registrar gasto: {str(e)}"
 
 
+@tool("add_income")
+def add_income_tool(amount: float, description: str, organization_context: str = None) -> str:
+    """Add a financial income to the system. 
+    Handles organization selection intelligently and creates the income transaction.
+    Use this when user wants to record income like 'ingreso 60000' or 'salario 150000 personal'."""
+    
+    try:
+        from app.services.transaction_service import TransactionService
+        from app.services.organization_service import OrganizationService
+        from app.services.user_service import UserService
+        from app.core.schemas import TransactionCreate
+        from app.models.transaction import TransactionType
+        from uuid import UUID
+        
+        db = _current_db
+        user_id = _current_user_id
+        
+        if not db or not user_id:
+            return "❌ Error: Database session or user ID not provided"
+        
+        # Get user and organizations
+        user = UserService.get_user(db, user_id)
+        user_organizations = OrganizationService.get_user_organizations(db, user_id)
+        
+        # Smart organization selection
+        target_organization_id = None
+        organization_name = "Personal"
+        
+        if organization_context:
+            context_lower = organization_context.lower()
+            if context_lower in ["personal", "mío", "mio", "propio"]:
+                target_organization_id = None
+                organization_name = "Personal"
+            elif context_lower in ["familia", "familiar", "family", "hogar"]:
+                if user_organizations:
+                    family_org = next((org for org in user_organizations if org.name.lower() in ["familia", "mi hogar", "hogar"]), None)
+                    if family_org:
+                        target_organization_id = family_org.id
+                        organization_name = family_org.name
+                    else:
+                        target_organization_id = user_organizations[0].id
+                        organization_name = user_organizations[0].name
+        else:
+            # No organization context provided - need to ask user
+            if user_organizations:
+                available_contexts = []
+                for org in user_organizations:
+                    org_type = "family" if org.name.lower() in ["familia", "mi hogar", "hogar"] else "organization"
+                    available_contexts.append({
+                        "id": str(org.id),
+                        "name": org.name,
+                        "type": org_type
+                    })
+                
+                # Store pending transaction for organization selection
+                from app.services.conversation_state import conversation_state
+                conversation_state.set_pending_transaction(user_id, {
+                    "transaction_data": {
+                        "amount": amount,
+                        "description": description,
+                        "type": "income"
+                    },
+                    "available_contexts": available_contexts
+                })
+                
+                # Ask user for organization selection
+                org_options = []
+                for i, org in enumerate(available_contexts, 1):
+                    emoji = "👨‍👩‍👧‍👦" if org["type"] == "family" else "🏢"
+                    org_options.append(f"{i}. {emoji} {org['name']}")
+                
+                org_list = "\n".join(org_options)
+                personal_option = f"{len(available_contexts) + 1}. 👤 Personal"
+                
+                return f"🏷️ **¿Dónde registrar el ingreso?**\n\n{org_list}\n{personal_option}\n\n📝 Responde con el número:"
+        
+        # Simple income categorization
+        def categorize_income(description: str) -> str:
+            description_lower = description.lower()
+            if any(word in description_lower for word in ["salario", "sueldo", "trabajo"]):
+                return "Salario"
+            elif any(word in description_lower for word in ["freelance", "proyecto", "consultoría"]):
+                return "Freelance"
+            elif any(word in description_lower for word in ["dividendos", "intereses", "inversión"]):
+                return "Inversiones"
+            elif any(word in description_lower for word in ["ventas", "venta", "vendí"]):
+                return "Ventas"
+            elif any(word in description_lower for word in ["regalo", "regalos"]):
+                return "Regalos"
+            else:
+                return "Otros Ingresos"
+        
+        # Create the transaction
+        transaction_data = TransactionCreate(
+            user_id=UUID(user_id) if isinstance(user_id, str) else user_id,
+            organization_id=target_organization_id,
+            amount=Decimal(str(amount)),
+            type=TransactionType.income,
+            category=categorize_income(description),
+            description=description
+        )
+        
+        transaction = TransactionService.create_transaction(db, transaction_data)
+        
+        currency = "₡" if user and user.currency == "CRC" else "$"
+        return f"✅ **Ingreso registrado**\n\n💰 {currency}{amount:,.0f} en {description}\n🏷️ Organización: {organization_name}\n📅 {transaction.date.strftime('%d/%m/%Y')}"
+        
+    except Exception as e:
+        return f"❌ Error al registrar ingreso: {str(e)}"
+
+
 @tool("generate_report")
 def generate_report_tool(period: str, organization: str = None) -> str:
     """Generate financial reports and summaries for different time periods and organizations.
