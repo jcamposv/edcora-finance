@@ -29,16 +29,23 @@ class ConversationManager:
             self.has_openai = get_openai_config()
             if self.has_openai:
                 self.intelligent_agent = Agent(
-                    role="Asistente Financiero Inteligente",
-                    goal="Entender completamente mensajes en español sobre finanzas y extraer información precisa sobre gastos, ingresos y contexto organizacional.",
-                    backstory="""Eres un experto en procesamiento de lenguaje natural en español, especializado en transacciones financieras.
-                    
-                    Entiendes patrones como:
-                    - "Gasto familia gasolina 40000" = gasto de 40000 en gasolina para la familia
-                    - "Compré almuerzo 5000" = gasto de 5000 en almuerzo (personal)
-                    - "Pago empresa 25000" = gasto de 25000 para la empresa
-                    
-                    Siempre respondes en JSON con la información extraída.""",
+                    role="Router Financiero Inteligente",
+                    goal="Analizar mensajes financieros con transparencia total y routing preciso siguiendo reglas estrictas.",
+                    backstory="""Eres un router especializado que sigue principios de Anthropic para agentes efectivos:
+
+PRINCIPIOS CORE:
+1. SIMPLICITY FIRST - Solo hacer lo necesario
+2. TRANSPARENCY - Explicar decisiones claramente  
+3. GUARDRAILS - Validar antes de actuar
+4. INTENT-BASED ROUTING - Categorizar inputs precisamente
+
+ESPECIALIZACIONES:
+- Detección de intenciones financieras (gastos, presupuestos, reportes)
+- Extracción de contexto organizacional SOLO si se menciona explícitamente
+- Routing a funciones específicas basado en intent claro
+- Validación de datos antes de procesamiento
+
+NUNCA inventes información que no esté en el mensaje.""",
                     verbose=True,
                     allow_delegation=False
                 )
@@ -104,27 +111,27 @@ class ConversationManager:
         
         task = Task(
             description=f"""
-            Analiza este mensaje en español y extrae la información:
+            INTENT-BASED ROUTER siguiendo mejores prácticas de Anthropic:
+            
             MENSAJE: "{message}"
             CONTEXTO: {org_context}
             
-            Determina:
-            1. TIPO DE ACCIÓN (debe ser UNO de estos):
-               - add_expense: cualquier gasto, compra, pago (ej: "gasto", "gasté", "compré", "pago")
-               - create_budget: crear presupuesto
-               - create_organization: crear familia/empresa/equipo (NUNCA si solo dice "personal")
-               - view_report: ver resumen/reporte/balance
-               - list_organizations: listar organizaciones (ej: "en qué familias estoy", "mis organizaciones", "cuáles familias", "donde estoy")
-               - manage_transactions: gestionar/editar/eliminar gastos (ej: "gestionar gastos", "eliminar gasto", "mis últimos gastos")
-               - accept_invitation: acepta invitación
-               - help: pide ayuda
-               - unknown: no está claro o respuesta de selección (ej: solo "Personal", "1", "almuerzo")
+            PASO 1: INTENT CLASSIFICATION (MAPEO DIRECTO)
+            ┌─ Gastos: "gasté", "gasto", "compré", "pago" + monto → add_expense
+            ├─ Presupuestos: "presupuesto", "budget" → create_budget  
+            ├─ Organizaciones: "crear familia/empresa" → create_organization
+            ├─ Reportes: "resumen", "reporte", "balance" → view_report
+            ├─ Listar: "qué familias", "mis organizaciones" → list_organizations
+            ├─ Gestionar: "gestionar gastos", "eliminar gasto" → manage_transactions
+            ├─ Invitaciones: "acepto" → accept_invitation
+            ├─ Ayuda: "ayuda", "help" → help
+            └─ Ambiguo: respuestas cortas, números solos → unknown
             
-            2. DATOS EXTRAÍDOS:
-               - amount: número del monto (solo el número, sin símbolos)
-               - description: descripción del gasto (sin el monto)
-               - organization_context: nombre de organización mencionada o null
-               - category: categoría inferida (Gasolina, Comida, etc.)
+            PASO 2: DATA EXTRACTION (SOLO SI MENCIONADO)
+            - amount: número exacto del mensaje
+            - description: descripción sin monto ni organizaciones
+            - organization_context: SOLO si se menciona explícitamente ("personal", "familia", etc.)
+            - category: categoría obvia del contexto
             
             REGLA CRÍTICA: organization_context SOLO debe tener valor si se menciona explícitamente.
             
@@ -142,11 +149,12 @@ class ConversationManager:
             - "En qué familias estoy" → list_organizations
             - "Gestionar gastos" → manage_transactions
             
-            RESPONDE SOLO JSON:
+            RESPONDE JSON CON TRANSPARENCIA:
             {{
                 "type": "tipo_de_accion",
                 "confidence": 0.9,
                 "is_new_flow": true,
+                "reasoning": "Breve explicación de por qué este intent",
                 "extracted_data": {{
                     "amount": numero_o_null,
                     "description": "texto_o_null",
@@ -171,6 +179,12 @@ class ConversationManager:
             if json_match:
                 json_str = json_match.group(0)
                 intent = json.loads(json_str)
+                
+                # GUARDRAILS: Validate AI response
+                validation_result = self._validate_ai_response(intent, message, user_organizations)
+                if not validation_result["valid"]:
+                    print(f"⚠️ GUARDRAIL TRIGGERED: {validation_result['reason']}")
+                    return self._regex_analyze_intent(message, context)
                 
                 # Ensure required fields exist
                 if "type" not in intent:
@@ -724,6 +738,55 @@ class ConversationManager:
         
         # Fallback to simple parsing
         return self._parse_organization_selection(message, user_organizations)
+    
+    def _validate_ai_response(self, intent: Dict, message: str, user_organizations: List) -> Dict[str, Any]:
+        """
+        GUARDRAILS: Validate AI response following Anthropic best practices
+        """
+        extracted_data = intent.get("extracted_data", {})
+        org_context = extracted_data.get("organization_context")
+        
+        # GUARDRAIL 1: No invented organizations
+        if org_context and user_organizations:
+            # Check if mentioned org exists
+            org_names = [org.name.lower() for org in user_organizations]
+            if (org_context.lower() not in ["personal", "mío", "mio", "propio"] and 
+                org_context.lower() not in org_names and
+                not any(org_context.lower() in name for name in org_names)):
+                
+                # Check if it's actually mentioned in the message
+                if org_context.lower() not in message.lower():
+                    return {
+                        "valid": False,
+                        "reason": f"AI invented organization '{org_context}' not mentioned in message"
+                    }
+        
+        # GUARDRAIL 2: Organization context only when explicitly mentioned
+        if org_context:
+            message_lower = message.lower()
+            context_mentioned = (
+                org_context.lower() in message_lower or
+                any(keyword in message_lower for keyword in ["personal", "familia", "empresa", "trabajo"])
+            )
+            if not context_mentioned:
+                return {
+                    "valid": False,
+                    "reason": f"AI assigned organization '{org_context}' without explicit mention"
+                }
+        
+        # GUARDRAIL 3: Valid intent types
+        valid_types = [
+            "add_expense", "create_budget", "create_organization", 
+            "view_report", "list_organizations", "manage_transactions",
+            "accept_invitation", "help", "unknown"
+        ]
+        if intent.get("type") not in valid_types:
+            return {
+                "valid": False,
+                "reason": f"Invalid intent type: {intent.get('type')}"
+            }
+        
+        return {"valid": True, "reason": "All validations passed"}
     
     def _create_budget_directly(self, data: Dict, user_id: str, db: Session, context: ConversationContext) -> Dict[str, Any]:
         """Create budget with all required data"""
