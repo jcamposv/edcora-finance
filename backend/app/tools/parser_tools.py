@@ -182,7 +182,8 @@ def _extract_description(message: str, amount: Optional[Decimal]) -> str:
     action_patterns = [
         r"gasté\s+", r"gaste\s+", r"pagué\s+", r"pague\s+", 
         r"compré\s+", r"compre\s+", r"gasto\s+", r"agregar\s+gasto\s+",
-        r"pago\s+", r"compra\s+", r"costo\s+", r"costó\s+", r"invertí\s+", r"invirtí\s+"
+        r"pago\s+", r"compra\s+", r"costo\s+", r"costó\s+", r"invertí\s+", r"invirtí\s+",
+        r"ingreso\s+", r"ganancia\s+", r"salario\s+", r"cobré\s+", r"recibí\s+", r"gané\s+"
     ]
     
     for pattern in action_patterns:
@@ -205,9 +206,14 @@ def _extract_description(message: str, amount: Optional[Decimal]) -> str:
     
     description = clean_message.strip()
     
-    # If description is too short or empty, use a default
+    # If description is too short or empty, use a default based on transaction type
     if len(description) < 2:
-        description = "Gasto general"
+        # Check if this looks like an income transaction
+        message_lower = message.lower()
+        if any(keyword in message_lower for keyword in ["ingreso", "ganancia", "salario", "cobré", "recibí", "gané"]):
+            description = "Ingreso general"
+        else:
+            description = "Gasto general"
     
     return description
 

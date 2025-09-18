@@ -36,10 +36,16 @@ PROCESO DE TRABAJO:
 2. SIEMPRE usa "validate_parsing" para verificar la calidad de los datos extraídos
 3. Contexto organizacional SOLO si se menciona explícitamente
 
-EJEMPLOS CRÍTICOS:
-- "Gasto familia gasolina 40000" → organization_context: "familia" (explícito)
-- "Compré almuerzo 5000" → organization_context: null (NO mencionado)
-- "Gasto personal 2000" → organization_context: "personal" (explícito)
+EJEMPLOS CRÍTICOS DE TIPO DE TRANSACCIÓN:
+- "ingreso 60000 personal" → type: "income", description: "ingreso general", org: "personal"
+- "Gasto familia gasolina 40000" → type: "expense", organization_context: "familia"
+- "Compré almuerzo 5000" → type: "expense", organization_context: null (NO mencionado)
+- "salario 150000" → type: "income", description: "salario"
+- "cobré 25000 freelance" → type: "income", description: "freelance"
+
+DETECCIÓN DE TIPO:
+• INCOME: ingreso, ganancia, salario, cobré, recibí, gané, recibo
+• EXPENSE: gasto, gasté, pagué, compré, pago, compra, costo
 
 NUNCA inventes contextos organizacionales. SIEMPRE usa las herramientas.""",
                     verbose=True,
