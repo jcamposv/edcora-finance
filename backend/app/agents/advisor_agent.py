@@ -2,6 +2,11 @@ from crewai import Agent, Task, Crew
 from typing import Dict, Any, List
 from decimal import Decimal
 from app.core.llm_config import get_advisor_config
+from app.tools.advisor_tools import (
+    analyze_spending_patterns_tool, 
+    calculate_savings_goal_tool, 
+    budget_recommendation_tool
+)
 
 class AdvisorAgent:
     def __init__(self):
@@ -9,23 +14,49 @@ class AdvisorAgent:
             # Setup OpenAI environment
             self.has_openai = get_advisor_config()
             
+            # Initialize tools for the advisor agent
+            self.tools = [
+                analyze_spending_patterns_tool,
+                calculate_savings_goal_tool, 
+                budget_recommendation_tool
+            ]
+            
             self.agent = Agent(
-                role="Financial Advisor",
-                goal="Provide personalized financial advice based on spending patterns and financial data",
-                backstory="You are a financial advisor specialized in personal finance management for Costa Rican users. You provide practical, actionable advice in Spanish.",
+                role="Asesor Financiero Costarricense",
+                goal="Proporcionar consejos financieros personalizados usando herramientas especializadas de análisis financiero",
+                backstory="""Eres un asesor financiero experto especializado en Costa Rica con acceso a herramientas avanzadas de análisis.
+
+HERRAMIENTAS DISPONIBLES:
+• analyze_spending_patterns: Analiza patrones de gasto por categoría
+• calculate_savings_goal: Calcula metas de ahorro realistas 
+• budget_recommendation: Recomienda distribución de presupuesto
+
+SIEMPRE USA LAS HERRAMIENTAS para generar consejos basados en datos reales.
+Combina insights de múltiples herramientas para dar consejos completos.
+Responde en español con enfoque práctico y cultural costarricense.""",
                 verbose=True,
-                allow_delegation=False
+                allow_delegation=False,
+                tools=self.tools  # 🔧 Usando CrewAI tools feature
             )
         except Exception as e:
             print(f"Warning: Failed to initialize AdvisorAgent: {e}")
             # Initialize without OpenAI as fallback
             self.has_openai = False
+            
+            # Initialize tools for fallback agent too
+            self.tools = [
+                analyze_spending_patterns_tool,
+                calculate_savings_goal_tool, 
+                budget_recommendation_tool
+            ]
+            
             self.agent = Agent(
-                role="Financial Advisor",
-                goal="Provide personalized financial advice based on spending patterns and financial data",
-                backstory="You are a financial advisor specialized in personal finance management for Costa Rican users. You provide practical, actionable advice in Spanish.",
+                role="Asesor Financiero Costarricense",
+                goal="Proporcionar consejos financieros usando herramientas de análisis (modo sin OpenAI)",
+                backstory="Eres un asesor financiero con acceso a herramientas de análisis. Usa las herramientas disponibles para generar consejos prácticos.",
                 verbose=True,
-                allow_delegation=False
+                allow_delegation=False,
+                tools=self.tools  # 🔧 Tools también en fallback
             )
     
     def generate_advice(self, financial_data: Dict[str, Any]) -> str:
@@ -41,29 +72,36 @@ class AdvisorAgent:
                 - period: Period type (weekly, monthly, yearly)
         """
         
+        # Extract data for tools
+        expenses_by_category = financial_data.get('expenses_by_category', [])
+        total_income = financial_data.get('total_income', 0)
+        total_expenses = financial_data.get('total_expenses', 0)
+        period = financial_data.get('period', 'mensual')
+        
         task = Task(
             description=f"""
-            Generate personalized financial advice in Spanish based on this financial data:
+            Genera consejos financieros personalizados usando las herramientas disponibles.
             
-            Período: {financial_data.get('period', 'mensual')}
-            Ingresos totales: ₡{financial_data.get('total_income', 0):,.2f}
-            Gastos totales: ₡{financial_data.get('total_expenses', 0):,.2f}
-            Balance: ₡{financial_data.get('balance', 0):,.2f}
+            DATOS FINANCIEROS:
+            - Período: {period}
+            - Ingresos: ₡{total_income:,.0f}
+            - Gastos: ₡{total_expenses:,.0f}
+            - Balance: ₡{financial_data.get('balance', total_income - total_expenses):,.0f}
+            - Gastos por categoría: {expenses_by_category}
             
-            Gastos por categoría:
-            {self._format_expenses_by_category(financial_data.get('expenses_by_category', []))}
+            INSTRUCCIONES:
+            1. USA la herramienta "analyze_spending_patterns" para analizar los patrones de gasto
+            2. USA la herramienta "calculate_savings_goal" para evaluar metas de ahorro
+            3. SI los ingresos son >0, USA "budget_recommendation" para sugerir distribución
+            4. Combina los resultados en un consejo integral y práctico
             
-            Provide advice that includes:
-            1. Overall financial health assessment
-            2. Spending pattern analysis
-            3. One specific, actionable recommendation
-            4. Encouragement or warning as appropriate
-            
-            Keep the advice concise (max 3 sentences) and practical for Costa Rican context.
-            Use positive, encouraging tone while being realistic.
+            FORMATO DE RESPUESTA:
+            - Máximo 4 oraciones
+            - Enfoque práctico y alentador
+            - Incluye al menos una recomendación específica basada en las herramientas
             """,
             agent=self.agent,
-            expected_output="Concise financial advice in Spanish (max 3 sentences)"
+            expected_output="Consejo financiero integral basado en análisis de herramientas (máximo 4 oraciones)"
         )
         
         crew = Crew(

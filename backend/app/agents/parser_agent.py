@@ -4,6 +4,10 @@ from decimal import Decimal
 from typing import Optional, Dict, Any
 from app.core.llm_config import get_openai_config
 from app.agents.currency_agent import CurrencyAgent
+from app.tools.parser_tools import (
+    parse_message_tool,
+    validate_parsing_tool
+)
 
 class ParserAgent:
     def __init__(self):
@@ -11,28 +15,36 @@ class ParserAgent:
             # Setup OpenAI environment
             self.has_openai = get_openai_config()
             
+            # Initialize tools for message parsing
+            self.tools = [
+                parse_message_tool,
+                validate_parsing_tool
+            ]
+            
             if self.has_openai:
                 self.agent = Agent(
-                    role="Experto Analizador de Mensajes Financieros",
-                    goal="Extraer información financiera completa y precisa de mensajes en español, manejando patrones naturales de conversación.",
-                    backstory="""Eres un experto en procesamiento de lenguaje natural especializado en finanzas para usuarios latinos.
+                    role="Experto Analizador de Mensajes Financieros con Herramientas",
+                    goal="Extraer información financiera usando herramientas especializadas de análisis",
+                    backstory="""Eres un experto en procesamiento de lenguaje natural con acceso a herramientas avanzadas.
 
-ENTIENDES PERFECTAMENTE:
-• Patrones naturales: "Gasto familia gasolina 40000" = 40000 en gasolina para familia
-• Múltiples formatos: "₡5000", "5000 colones", "5000", "$25 USD"  
-• Contextos: familia, empresa, personal, trabajo
-• Categorías automáticas: gasolina, comida, entretenimiento, etc.
-• Tipos: gastos (default), ingresos, pagos, compras
+HERRAMIENTAS DISPONIBLES:
+• parse_message: Analiza mensajes para extraer información financiera
+• validate_parsing: Valida la información extraída para consistencia
 
-EJEMPLOS REALES:
-- "Gasto familia gasolina 40000" → amount: 40000, description: "gasolina", context: "familia"
-- "Compré almuerzo 5000" → amount: 5000, description: "almuerzo", context: null
-- "Pago empresa internet 25000" → amount: 25000, description: "internet", context: "empresa"
-- "Ingreso salario 500000" → amount: 500000, type: "income", description: "salario"
+PROCESO DE TRABAJO:
+1. SIEMPRE usa "parse_message" para analizar el mensaje financiero
+2. SIEMPRE usa "validate_parsing" para verificar la calidad de los datos extraídos
+3. Contexto organizacional SOLO si se menciona explícitamente
 
-Siempre respondes JSON preciso y estructurado.""",
+EJEMPLOS CRÍTICOS:
+- "Gasto familia gasolina 40000" → organization_context: "familia" (explícito)
+- "Compré almuerzo 5000" → organization_context: null (NO mencionado)
+- "Gasto personal 2000" → organization_context: "personal" (explícito)
+
+NUNCA inventes contextos organizacionales. SIEMPRE usa las herramientas.""",
                     verbose=True,
-                    allow_delegation=False
+                    allow_delegation=False,
+                    tools=self.tools
                 )
             else:
                 self.agent = None
@@ -52,65 +64,44 @@ Siempre respondes JSON preciso y estructurado.""",
         Returns dict with amount, description, transaction type, and currency info.
         """
         
-        task = Task(
-            description=f"""
-            Analiza este mensaje de WhatsApp y extrae información financiera completa:
-            MENSAJE: "{message}"
-            
-            EXTRAE:
-            1. AMOUNT: Número exacto del monto (sin símbolos, solo número)
-            2. TYPE: income o expense (default: expense)
-            3. DESCRIPTION: Descripción limpia del gasto/ingreso
-            4. ORGANIZATION_CONTEXT: Contexto mencionado - MUY IMPORTANTE:
-               - SOLO si se menciona explícitamente en el mensaje
-               - Si menciona "personal" en cualquier forma → "personal"
-               - Si menciona "familia", "empresa", "trabajo" → usar esa palabra exacta
-               - Si NO menciona ningún contexto organizacional → null
-               - NUNCA inventar o asumir organizaciones
-            5. CATEGORY: Categoría inferida (Gasolina, Comida, Entretenimiento, etc.)
-            
-            EJEMPLOS DE ANÁLISIS:
-            - "Gasto familia gasolina 40000" → amount: 40000, type: expense, description: "gasolina", organization_context: "familia", category: "Gasolina"
-            - "Gaste 2000 en comida personal" → amount: 2000, type: expense, description: "comida", organization_context: "personal", category: "Comida"
-            - "Gasto personal 2000" → amount: 2000, type: expense, description: "gasto general", organization_context: "personal", category: "General"
-            - "Compré almuerzo 5000" → amount: 5000, type: expense, description: "almuerzo", organization_context: null, category: "Comida"
-            - "Gasto 3000" → amount: 3000, type: expense, description: "gasto general", organization_context: null, category: "General"
-            - "Almuerzo" → amount: null, type: expense, description: "almuerzo", organization_context: null, category: "Comida"
-            - "Gaste 5000 en almuerzo" → amount: 5000, type: expense, description: "almuerzo", organization_context: null, category: "Comida"
-            - "Pago empresa 25000" → amount: 25000, type: expense, description: "pago", organization_context: "empresa", category: "Empresa"
-            - "Ingreso salario 500000" → amount: 500000, type: income, description: "salario", organization_context: null, category: "Salario"
-            
-            RESPONDE EN FORMATO JSON:
-            {{
-                "amount": numero_exacto,
-                "type": "expense_o_income", 
-                "description": "descripcion_limpia",
-                "organization_context": "contexto_o_null",
-                "category": "categoria_inferida"
-            }}
-            
-            CRÍTICO: Si el mensaje NO menciona explícitamente una organización (familia, empresa, personal, etc.), 
-            organization_context DEBE ser null. NO inventar organizaciones.
-            """,
-            agent=self.agent,
-            expected_output="JSON estructurado con información financiera completa extraída"
-        )
-        
-        crew = Crew(
-            agents=[self.agent],
-            tasks=[task],
-            memory=True,  # 🧠 Enable memory for parsing context
-            verbose=True
-        )
+        if not self.has_openai or not self.agent:
+            return self._regex_fallback_parse(message)
         
         try:
-            # Parse the message for amount and type
-            if self.has_openai:
-                result = crew.kickoff()
-                parsed_data = self._parse_crew_result(str(result), message)
-            else:
-                # Use regex fallback if no OpenAI configured
-                parsed_data = self._regex_fallback_parse(message)
+            task = Task(
+                description=f"""
+                Analiza este mensaje financiero usando las herramientas disponibles.
+                
+                MENSAJE: "{message}"
+                TELÉFONO: "{phone_number or 'No disponible'}"
+                
+                PROCESO OBLIGATORIO:
+                1. USA "parse_message" para extraer información del mensaje: "{message}"
+                2. USA "validate_parsing" para verificar la calidad de los datos extraídos
+                
+                IMPORTANTE:
+                • SIEMPRE usa ambas herramientas en orden
+                • NO inventes contextos organizacionales
+                • Organization_context SOLO si se menciona explícitamente
+                • Devuelve el resultado final de las herramientas
+                
+                EJEMPLOS CRÍTICOS:
+                - "Gasto familia gasolina 40000" → organization_context: "familia" (explícito)
+                - "Compré almuerzo 5000" → organization_context: null (NO mencionado)
+                - "Gasto personal 2000" → organization_context: "personal" (explícito)
+                """,
+                agent=self.agent,
+                expected_output="Información financiera extraída usando herramientas especializadas"
+            )
+            
+            crew = Crew(
+                agents=[self.agent],
+                tasks=[task],
+                verbose=False
+            )
+            
+            result = crew.kickoff()
+            parsed_data = self._parse_crew_result(str(result), message)
             
             # Detect currency using the intelligent agent
             if parsed_data["success"] and phone_number and self.currency_agent:

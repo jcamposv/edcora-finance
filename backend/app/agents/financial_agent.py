@@ -7,7 +7,8 @@ from crewai import Agent, Task, Crew
 from typing import Dict, Any
 from sqlalchemy.orm import Session
 from app.core.llm_config import get_openai_config
-from app.tools.financial_tools import AddExpenseTool, GenerateReportTool, OrganizationManagementTool
+from app.tools.financial_tools import add_expense_tool, generate_report_tool, manage_organizations_tool, set_tool_context
+from app.tools.report_tools import set_report_tool_context
 
 
 class FinancialAgent:
@@ -19,11 +20,15 @@ class FinancialAgent:
         self.has_openai = get_openai_config()
         
         if self.has_openai:
+            # Set global context for tools
+            set_tool_context(db, user_id)
+            set_report_tool_context(db)
+            
             # Initialize tools
             self.tools = [
-                AddExpenseTool(db=db, user_id=user_id),
-                GenerateReportTool(db=db, user_id=user_id),
-                OrganizationManagementTool(db=db, user_id=user_id)
+                add_expense_tool,
+                generate_report_tool,
+                manage_organizations_tool
             ]
             
             # Create agent with tools
