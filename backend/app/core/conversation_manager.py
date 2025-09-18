@@ -3,6 +3,7 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta
 from sqlalchemy.orm import Session
 from app.core.llm_config import get_openai_config
+from app.services.conversation_state import conversation_state
 from crewai import Agent, Task, Crew
 import json
 import uuid
@@ -59,10 +60,19 @@ NUNCA inventes información que no esté en el mensaje.""",
     def process_message(self, message: str, user_id: str, db: Session) -> Dict[str, Any]:
         """Process message with conversation context"""
         
+        # 🔍 PRIORITY: Check for pending transaction first
+        pending_transaction = conversation_state.get_pending_transaction(user_id)
+        if pending_transaction:
+            print(f"💾 FOUND PENDING TRANSACTION: user={user_id}, data={pending_transaction['transaction_data']}")
+            return self._handle_organization_selection_response(message, user_id, db, pending_transaction)
+        
         # Get or create session
         context = self._get_or_create_context(user_id)
         context.message_count += 1
         context.last_message_time = datetime.now()
+        
+        # DEBUG: Log conversation state
+        print(f"🔍 CONVERSATION STATE: user={user_id}, flow={context.current_flow}, data={context.flow_data}")
         
         # Clean up old sessions
         self._cleanup_old_sessions()
@@ -426,8 +436,18 @@ NUNCA inventes información que no esté en el mensaje.""",
         context.flow_data = data
         context.flow_data["user_organizations"] = [{"id": str(org.id), "name": org.name, "type": org.type.value} for org in user_organizations]
         
+        print(f"🔄 STARTING EXPENSE FLOW: user={user_id}, flow={context.current_flow}")
+        print(f"🔄 FLOW DATA: {context.flow_data}")
+        
         # If we need organization clarification first
         if needs_org_clarification and has_amount and has_description:
+            # 💾 SAVE STATE: Store pending transaction for persistence
+            conversation_state.set_pending_transaction(
+                user_id=user_id,
+                transaction_data=data,
+                available_contexts=[{"id": str(org.id), "name": org.name, "type": org.type.value} for org in user_organizations]
+            )
+            print(f"💾 SAVED PENDING TRANSACTION: user={user_id}, amount={data.get('amount')}")
             return self._ask_for_organization(data, user_organizations)
         
         # If missing amount
@@ -671,6 +691,48 @@ NUNCA inventes información que no esté en el mensaje.""",
         
         print(f"🔍 NO MATCH FOUND")
         return None
+    
+    def _handle_organization_selection_response(self, message: str, user_id: str, db: Session, pending_transaction: Dict) -> Dict[str, Any]:
+        """Handle organization selection response for pending transaction"""
+        
+        transaction_data = pending_transaction["transaction_data"]
+        available_contexts = pending_transaction["available_contexts"]
+        
+        print(f"🔍 HANDLING ORG SELECTION: message='{message}', contexts={len(available_contexts)}")
+        
+        # Use our fast-track organization selection
+        org_selection = self._intelligent_organization_selection(
+            message, available_contexts, user_id, db
+        )
+        
+        if org_selection:
+            # Clear pending transaction
+            conversation_state.clear_pending_transaction(user_id)
+            
+            # Update transaction data with organization
+            transaction_data.update({
+                "organization_id": org_selection.get("organization_id"),
+                "organization_name": org_selection.get("organization_name")
+            })
+            
+            # Create the expense directly
+            context = self._get_or_create_context(user_id)
+            return self._create_expense_directly(transaction_data, user_id, db, context)
+        else:
+            # Invalid selection, ask again
+            org_options = []
+            for i, org in enumerate(available_contexts, 1):
+                emoji = "👨‍👩‍👧‍👦" if org["type"] == "family" else "🏢"
+                org_options.append(f"{i}. {emoji} {org['name']}")
+            
+            org_list = "\n".join(org_options)
+            personal_option = f"{len(available_contexts) + 1}. 👤 Personal"
+            
+            return {
+                "success": False,
+                "message": f"🤔 No entendí tu selección\n\n🏷️ **¿Dónde registrar el gasto?**\n\n{org_list}\n{personal_option}\n\n📝 Responde con el número:",
+                "action": "expense_need_organization"
+            }
     
     def _intelligent_organization_selection(self, message: str, user_organizations: List, user_id: str, db: Session) -> Optional[Dict]:
         """Use AI to intelligently parse organization selection with fast-track for simple responses"""
