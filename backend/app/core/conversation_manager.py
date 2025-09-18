@@ -126,21 +126,21 @@ class ConversationManager:
                - organization_context: nombre de organización mencionada o null
                - category: categoría inferida (Gasolina, Comida, etc.)
             
+            REGLA CRÍTICA: organization_context SOLO debe tener valor si se menciona explícitamente.
+            
             EJEMPLOS:
             - "Gasto familia gasolina 40000" → add_expense, amount: 40000, description: "gasolina", organization_context: "familia"
             - "Compré almuerzo 5000" → add_expense, amount: 5000, description: "almuerzo", organization_context: null
             - "Gasto 40000" → add_expense, amount: 40000, description: null, organization_context: null
+            - "Almuerzo" → unknown, organization_context: null (NO ASUMIR ORGANIZACION)
+            - "Gasto 3000" → add_expense, amount: 3000, description: null, organization_context: null (NO ASUMIR)
+            - "Gaste 5000 en almuerzo" → add_expense, amount: 5000, description: "almuerzo", organization_context: null (NO MENCIONA ORG)
             - "Gasto 5000 gasolina quiero ingresarlo a personal" → add_expense, amount: 5000, description: "gasolina", organization_context: "personal"
             - "Personal" → unknown (respuesta de selección, no crear organización)
-            - "almuerzo" → unknown (respuesta de descripción)
-            - "1" → unknown (respuesta de selección numérica)
             - "Crear presupuesto comida" → create_budget, category: "Comida"
             - "Crear familia Mi Hogar" → create_organization
             - "En qué familias estoy" → list_organizations
-            - "Cuáles organizaciones tengo" → list_organizations
-            - "Mis familias" → list_organizations
             - "Gestionar gastos" → manage_transactions
-            - "Eliminar último gasto" → manage_transactions
             
             RESPONDE SOLO JSON:
             {{

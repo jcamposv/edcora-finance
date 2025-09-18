@@ -62,9 +62,11 @@ Siempre respondes JSON preciso y estructurado.""",
             2. TYPE: income o expense (default: expense)
             3. DESCRIPTION: Descripción limpia del gasto/ingreso
             4. ORGANIZATION_CONTEXT: Contexto mencionado - MUY IMPORTANTE:
+               - SOLO si se menciona explícitamente en el mensaje
                - Si menciona "personal" en cualquier forma → "personal"
-               - Si menciona "familia", "empresa", "trabajo" → usar esa palabra
-               - Si no menciona contexto → null
+               - Si menciona "familia", "empresa", "trabajo" → usar esa palabra exacta
+               - Si NO menciona ningún contexto organizacional → null
+               - NUNCA inventar o asumir organizaciones
             5. CATEGORY: Categoría inferida (Gasolina, Comida, Entretenimiento, etc.)
             
             EJEMPLOS DE ANÁLISIS:
@@ -72,9 +74,11 @@ Siempre respondes JSON preciso y estructurado.""",
             - "Gaste 2000 en comida personal" → amount: 2000, type: expense, description: "comida", organization_context: "personal", category: "Comida"
             - "Gasto personal 2000" → amount: 2000, type: expense, description: "gasto general", organization_context: "personal", category: "General"
             - "Compré almuerzo 5000" → amount: 5000, type: expense, description: "almuerzo", organization_context: null, category: "Comida"
+            - "Gasto 3000" → amount: 3000, type: expense, description: "gasto general", organization_context: null, category: "General"
+            - "Almuerzo" → amount: null, type: expense, description: "almuerzo", organization_context: null, category: "Comida"
+            - "Gaste 5000 en almuerzo" → amount: 5000, type: expense, description: "almuerzo", organization_context: null, category: "Comida"
             - "Pago empresa 25000" → amount: 25000, type: expense, description: "pago", organization_context: "empresa", category: "Empresa"
             - "Ingreso salario 500000" → amount: 500000, type: income, description: "salario", organization_context: null, category: "Salario"
-            - "Gasto 40000" → amount: 40000, type: expense, description: "gasto general", organization_context: null, category: "General"
             
             RESPONDE EN FORMATO JSON:
             {{
@@ -84,6 +88,9 @@ Siempre respondes JSON preciso y estructurado.""",
                 "organization_context": "contexto_o_null",
                 "category": "categoria_inferida"
             }}
+            
+            CRÍTICO: Si el mensaje NO menciona explícitamente una organización (familia, empresa, personal, etc.), 
+            organization_context DEBE ser null. NO inventar organizaciones.
             """,
             agent=self.agent,
             expected_output="JSON estructurado con información financiera completa extraída"
