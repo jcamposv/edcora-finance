@@ -428,8 +428,11 @@ def manage_organizations_tool(action: str, organization_name: str = None) -> str
             
             org_list = []
             for org in organizations:
-                emoji = "👨‍👩‍👧‍👦" if org.type.value == "family" else "🏢"
-                role_emoji = "👑" if org.owner_id == user_id else "👤"
+                org_type = org.type if hasattr(org, 'type') else "organization"
+                if hasattr(org_type, 'value'):
+                    org_type = org_type.value
+                emoji = "👨‍👩‍👧‍👦" if org_type == "family" else "🏢"
+                role_emoji = "👑" if str(org.owner_id) == str(user_id) else "👤"
                 org_list.append(f"{emoji} **{org.name}** {role_emoji}")
             
             return f"🏷️ **Tus organizaciones:**\n\n" + "\n".join(org_list)

@@ -57,6 +57,9 @@ EJEMPLOS DE USO DE HERRAMIENTAS:
 • "cobré 25000 freelance" → usar add_income con amount=25000, description="freelance"
 • "Resumen personal" → usar generate_report con period="este mes", organization="personal"
 • "En qué familias estoy" → usar manage_organizations con action="list"
+• "Lista de organizaciones" → usar manage_organizations con action="list"
+• "En cuales organizaciones estoy" → usar manage_organizations con action="list"
+• "Mis organizaciones" → usar manage_organizations con action="list"
 • "Crear familia Mi Hogar" → usar manage_organizations con action="create", organization_name="Mi Hogar"
 
 IMPORTANTE: SIEMPRE usa las herramientas para ejecutar acciones. No intentes manejar lógica compleja manualmente.""",
@@ -84,7 +87,8 @@ IMPORTANTE: SIEMPRE usa las herramientas para ejecutar acciones. No intentes man
                 1. Si es un GASTO/EXPENSE → usa add_expense (gasto, gasté, pagué, compré, etc.)
                 2. Si es un INGRESO/INCOME → usa add_income (ingreso, salario, cobré, recibí, gané, etc.)
                 3. Si es un reporte/resumen → usa generate_report  
-                4. Si es gestión de organizaciones → usa manage_organizations
+                4. Si es consulta de organizaciones → usa manage_organizations con action="list" (en qué familias, mis organizaciones, lista organizaciones)
+                5. Si es crear organización → usa manage_organizations con action="create"
                 
                 INSTRUCCIONES ESPECÍFICAS:
                 • Extrae cantidades exactas (ej: "500", "40000")
@@ -97,6 +101,8 @@ IMPORTANTE: SIEMPRE usa las herramientas para ejecutar acciones. No intentes man
                 • "ingreso 60000 personal" → add_income(amount=60000, description="ingreso general", organization_context="personal")
                 • "salario 150000" → add_income(amount=150000, description="salario")
                 • "Resumen familia" → generate_report(period="este mes", organization="familia")
+                • "En qué familias estoy" → manage_organizations(action="list")
+                • "Lista de organizaciones" → manage_organizations(action="list")
                 • "Crear familia Nueva" → manage_organizations(action="create", organization_name="Nueva")
                 
                 Responde directamente con el resultado de la herramienta.
@@ -171,6 +177,19 @@ IMPORTANTE: SIEMPRE usa las herramientas para ejecutar acciones. No intentes man
                     "success": True,
                     "message": result,
                     "action": "report_generated"
+                }
+            except:
+                pass
+        
+        # Check for organization patterns
+        if any(word in message_lower for word in ["organizaciones", "familias", "lista", "qué familias", "en cuales", "mis organizaciones"]):
+            try:
+                result = manage_organizations_tool(action="list")
+                
+                return {
+                    "success": True,
+                    "message": result,
+                    "action": "organizations_listed"
                 }
             except:
                 pass
